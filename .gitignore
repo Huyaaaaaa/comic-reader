@@ -1,0 +1,16 @@
+.DS_Store
+node_modules/
+dist/
+build/
+coverage/
+.env
+.env.local
+backend/data/
+frontend/dist/
+*.log
+*.db
+*.sqlite
+
+*.tsbuildinfo
+
+frontend/package-lock.json

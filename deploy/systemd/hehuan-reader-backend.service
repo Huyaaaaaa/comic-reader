@@ -1,0 +1,15 @@
+[Unit]
+Description=Hehuan Reader Backend
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/hehuan-reader/backend
+Environment=HEHUAN_HTTP_ADDR=:8080
+Environment=HEHUAN_DATA_DIR=/var/lib/hehuan-reader
+ExecStart=/opt/hehuan-reader/backend/hehuan-server
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
