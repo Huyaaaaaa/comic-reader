@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
+import ComicCover from '../components/ComicCover'
 import { addFavorite, getComicDetail, listFavorites, removeFavorite, syncComicDetail, type ComicDetail } from '../lib/api'
 
 export default function ComicDetailPage() {
@@ -88,30 +89,38 @@ export default function ComicDetailPage() {
         </div>
       </header>
 
-      {syncMessage ? <section className="panel"><p className="hint-text">{syncing ? `${syncMessage}` : syncMessage}</p></section> : null}
+      {syncMessage ? <section className="panel"><p className="hint-text">{syncing ? syncMessage : syncMessage}</p></section> : null}
 
       <section className="detail-hero panel">
-        <div className="detail-cover media-frame">
-          {comic.cover_url ? <img src={comic.cover_url} alt={comic.title} /> : <span>{comic.title.slice(0, 1) || '漫'}</span>}
-        </div>
+        <ComicCover
+          comicId={comic.id}
+          title={comic.title}
+          coverURL={comic.cover_url}
+          coverLocalRelPath={comic.cover_local_rel_path}
+          className="detail-cover media-frame"
+          loading="eager"
+        />
         <div className="detail-info">
           <div className="detail-badges">
             <span>评分 {comic.rating || 0}</span>
             <span>收藏 {comic.favorites}</span>
-            <span>{comic.category_name || '未知分类'}</span>
-            <span>{isFavorite ? '已收藏' : '未收藏'}</span>
+            <span>{comic.category_name || '未分类'}</span>
           </div>
           <div>
-            <h2>作者</h2>
-            <p>{comic.authors.length ? comic.authors.map((item) => item.name).join(' / ') : '暂无作者信息'}</p>
+            <strong>作者</strong>
+            <p>{comic.authors.length ? comic.authors.map((author) => author.name).join(' / ') : '待补全'}</p>
           </div>
           <div>
-            <h2>标签</h2>
-            <p>{comic.tags.length ? comic.tags.map((item) => item.name).join(' · ') : '暂无标签信息'}</p>
+            <strong>标签</strong>
+            <p>{comic.tags.length ? comic.tags.map((tag) => tag.name).join(' · ') : '待补全'}</p>
           </div>
           <div>
-            <h2>缓存状态</h2>
+            <strong>缓存状态</strong>
             <p>L{comic.cache_state.meta_level} · 封面 {comic.cache_state.cover_ready ? '已缓存' : '未缓存'} · 图片 {comic.cache_state.images_local}/{comic.cache_state.images_total}</p>
+          </div>
+          <div>
+            <strong>源站时间</strong>
+            <p>创建于 {comic.created_at ? new Date(comic.created_at).toLocaleString() : '未知'}，最近更新 {comic.updated_at ? new Date(comic.updated_at).toLocaleString() : '未知'}</p>
           </div>
         </div>
       </section>

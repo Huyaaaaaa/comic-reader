@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
+import ComicCover from '../components/ComicCover'
 import { listFavorites, type FavoriteItem } from '../lib/api'
 
 export default function FavoritesPage() {
@@ -21,7 +22,14 @@ export default function FavoritesPage() {
         {items.length === 0 ? <div className="panel">还没有收藏任何漫画。</div> : null}
         {items.map((item) => (
           <article key={item.comic_id} className="panel list-row">
-            <div>
+            <ComicCover
+              comicId={item.comic_id}
+              title={item.comic.title}
+              coverURL={item.comic.cover_url}
+              coverLocalRelPath={item.comic.cover_local_rel_path}
+              className="list-cover media-frame"
+            />
+            <div className="list-copy">
               <strong>{item.comic.title}</strong>
               <p>{item.comic.subtitle || item.comic.category_name}</p>
               <small>{item.offline_ready ? '已离线可读' : '尚未完全离线'}</small>

@@ -1,5 +1,6 @@
 import { FormEvent, useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
+import ComicCover from '../components/ComicCover'
 import { addSearchHistory, clearSearchHistory, listComics, listSearchHistory, searchComics, type ComicListItem, type SearchHistoryItem } from '../lib/api'
 
 export default function ComicsPage() {
@@ -93,11 +94,17 @@ export default function ComicsPage() {
       <div className="comic-grid">
         {items.map((item) => (
           <Link key={item.id} to={`/comics/${item.id}`} className="comic-card">
-            <div className="comic-cover">{item.title.slice(0, 1) || '漫'}</div>
+            <ComicCover
+              comicId={item.id}
+              title={item.title}
+              coverURL={item.cover_url}
+              coverLocalRelPath={item.cover_local_rel_path}
+              className="comic-cover media-frame"
+            />
             <div className="comic-meta">
               <strong>{item.title}</strong>
               <p>{item.subtitle || item.category_name || '暂无副标题'}</p>
-              <small>缓存：L{item.cache_state.meta_level} · 图片 {item.cache_state.images_local}/{item.cache_state.images_total}</small>
+              <small>缓存：L{item.cache_state.meta_level} · 封面 {item.cache_state.cover_ready ? '已缓存' : '待缓存'} · 图片 {item.cache_state.images_local}/{item.cache_state.images_total}</small>
             </div>
           </Link>
         ))}

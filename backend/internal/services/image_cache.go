@@ -34,6 +34,66 @@ func NewImageProxyService(dataDir string, comicStore *store.ComicStore, events *
 	}
 }
 
+func (service *ImageProxyService) EnsureCoverLocal(ctx context.Context, comicID int64) (string, error) {
+	target, err := service.comicStore.GetCoverTarget(comicID)
+	if err != nil {
+		return "", err
+	}
+
+	if candidate, ok := service.resolveLocalFile(target.LocalRelPath); ok {
+		if err := service.comicStore.MarkCoverCached(comicID, target.LocalRelPath); err != nil {
+			return "", err
+		}
+		return candidate, nil
+	}
+	if strings.TrimSpace(target.CoverURL) == "" {
+		return "", fmt.Errorf("cover url missing for comic %d", comicID)
+	}
+
+	relPath, absPath := service.buildCachePath("covers", target.CoverURL, "")
+	if fileExists(absPath) {
+		if err := service.comicStore.MarkCoverCached(comicID, relPath); err != nil {
+			return "", err
+		}
+		return absPath, nil
+	}
+
+	value, err, _ := service.group.Do("cover:"+target.CoverURL, func() (interface{}, error) {
+		if fileExists(absPath) {
+			if err := service.comicStore.MarkCoverCached(comicID, relPath); err != nil {
+				return nil, err
+			}
+			return absPath, nil
+		}
+		if _, err := service.downloadAndStore(ctx, target.CoverURL, absPath, "image/avif,image/webp,image/apng,image/*,*/*;q=0.8"); err != nil {
+			service.events.Publish("cover.cache.failed", map[string]any{"comic_id": comicID, "url": target.CoverURL, "error": err.Error()})
+			return nil, err
+		}
+		if err := service.comicStore.MarkCoverCached(comicID, relPath); err != nil {
+			return nil, err
+		}
+		service.events.Publish("cover.cache.completed", map[string]any{
+			"comic_id":   comicID,
+			"url":        target.CoverURL,
+			"local_path": relPath,
+			"file_size":  fileSize(absPath),
+		})
+		return absPath, nil
+	})
+	if err != nil {
+		return "", err
+	}
+
+	resolved, _ := value.(string)
+	if resolved == "" {
+		return "", fmt.Errorf("cover cache path is empty")
+	}
+	if err := service.comicStore.MarkCoverCached(comicID, relPath); err != nil {
+		return "", err
+	}
+	return resolved, nil
+}
+
 func (service *ImageProxyService) EnsureImageLocal(ctx context.Context, comicID int64, sort int) (string, error) {
 	target, err := service.comicStore.GetImageTarget(comicID, sort)
 	if err != nil {
@@ -43,14 +103,14 @@ func (service *ImageProxyService) EnsureImageLocal(ctx context.Context, comicID 
 		return "", fmt.Errorf("image url missing for comic %d page %d", comicID, sort)
 	}
 
-	relPath, absPath := service.buildCachePath(target.ImageURL, target.Extension)
-	if target.LocalRelPath != "" {
-		candidate := filepath.Join(service.dataDir, filepath.FromSlash(target.LocalRelPath))
-		if fileExists(candidate) {
-			return candidate, nil
+	if candidate, ok := service.resolveLocalFile(target.LocalRelPath); ok {
+		if err := service.comicStore.MarkImageCached(comicID, sort, target.LocalRelPath, fileSize(candidate)); err != nil {
+			return "", err
 		}
+		return candidate, nil
 	}
 
+	relPath, absPath := service.buildCachePath("images", target.ImageURL, target.Extension)
 	if fileExists(absPath) {
 		if err := service.comicStore.MarkImageCached(comicID, sort, relPath, fileSize(absPath)); err != nil {
 			return "", err
@@ -58,14 +118,19 @@ func (service *ImageProxyService) EnsureImageLocal(ctx context.Context, comicID 
 		return absPath, nil
 	}
 
-	value, err, _ := service.group.Do(target.ImageURL, func() (interface{}, error) {
+	value, err, _ := service.group.Do("image:"+target.ImageURL, func() (interface{}, error) {
 		if fileExists(absPath) {
 			if err := service.comicStore.MarkImageCached(comicID, sort, relPath, fileSize(absPath)); err != nil {
 				return nil, err
 			}
 			return absPath, nil
 		}
-		return service.downloadAndStore(ctx, comicID, sort, target.ImageURL, relPath, absPath)
+		_, err := service.downloadAndStore(ctx, target.ImageURL, absPath, "image/avif,image/webp,image/apng,image/*,*/*;q=0.8")
+		if err != nil {
+			service.events.Publish("image.cache.failed", map[string]any{"comic_id": comicID, "sort": sort, "url": target.ImageURL, "error": err.Error()})
+			return nil, err
+		}
+		return absPath, nil
 	})
 	if err != nil {
 		return "", err
@@ -77,76 +142,81 @@ func (service *ImageProxyService) EnsureImageLocal(ctx context.Context, comicID 
 	if err := service.comicStore.MarkImageCached(comicID, sort, relPath, fileSize(resolved)); err != nil {
 		return "", err
 	}
+	service.events.Publish("image.cache.completed", map[string]any{
+		"comic_id":   comicID,
+		"sort":       sort,
+		"url":        target.ImageURL,
+		"local_path": relPath,
+		"file_size":  fileSize(resolved),
+	})
 	return resolved, nil
 }
 
-func (service *ImageProxyService) downloadAndStore(ctx context.Context, comicID int64, sort int, imageURL string, relPath string, absPath string) (string, error) {
+func (service *ImageProxyService) downloadAndStore(ctx context.Context, remoteURL string, absPath string, accept string) (int64, error) {
 	if err := os.MkdirAll(filepath.Dir(absPath), 0o755); err != nil {
-		return "", err
+		return 0, err
 	}
 
-	request, err := http.NewRequestWithContext(ctx, http.MethodGet, imageURL, nil)
+	request, err := http.NewRequestWithContext(ctx, http.MethodGet, remoteURL, nil)
 	if err != nil {
-		return "", err
+		return 0, err
 	}
 	request.Header.Set("User-Agent", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36")
-	request.Header.Set("Accept", "image/avif,image/webp,image/apng,image/*,*/*;q=0.8")
-	timeStarted := time.Now()
+	if strings.TrimSpace(accept) != "" {
+		request.Header.Set("Accept", accept)
+	}
+
 	response, err := service.httpClient.Do(request)
 	if err != nil {
-		service.events.Publish("image.cache.failed", map[string]any{"comic_id": comicID, "sort": sort, "url": imageURL, "error": err.Error()})
-		return "", err
+		return 0, err
 	}
 	defer response.Body.Close()
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
-		err = fmt.Errorf("unexpected image status %d", response.StatusCode)
-		service.events.Publish("image.cache.failed", map[string]any{"comic_id": comicID, "sort": sort, "url": imageURL, "error": err.Error()})
-		return "", err
+		return 0, fmt.Errorf("unexpected remote status %d", response.StatusCode)
 	}
 
-	temporaryFile, err := os.CreateTemp(filepath.Dir(absPath), "img-*.tmp")
+	temporaryFile, err := os.CreateTemp(filepath.Dir(absPath), "asset-*.tmp")
 	if err != nil {
-		return "", err
+		return 0, err
 	}
 	temporaryName := temporaryFile.Name()
 	copied, copyErr := io.Copy(temporaryFile, response.Body)
 	closeErr := temporaryFile.Close()
 	if copyErr != nil {
 		_ = os.Remove(temporaryName)
-		service.events.Publish("image.cache.failed", map[string]any{"comic_id": comicID, "sort": sort, "url": imageURL, "error": copyErr.Error()})
-		return "", copyErr
+		return 0, copyErr
 	}
 	if closeErr != nil {
 		_ = os.Remove(temporaryName)
-		return "", closeErr
+		return 0, closeErr
 	}
 	if copied <= 0 {
 		_ = os.Remove(temporaryName)
-		return "", fmt.Errorf("empty image body")
+		return 0, fmt.Errorf("empty remote body")
 	}
 	if err := os.Rename(temporaryName, absPath); err != nil {
 		_ = os.Remove(temporaryName)
-		return "", err
+		return 0, err
 	}
-	if err := service.comicStore.MarkImageCached(comicID, sort, relPath, copied); err != nil {
-		return "", err
-	}
-	service.events.Publish("image.cache.completed", map[string]any{
-		"comic_id":   comicID,
-		"sort":       sort,
-		"url":        imageURL,
-		"local_path": relPath,
-		"file_size":  copied,
-		"elapsed_ms": time.Since(timeStarted).Milliseconds(),
-	})
-	return absPath, nil
+	return copied, nil
 }
 
-func (service *ImageProxyService) buildCachePath(imageURL string, extension string) (string, string) {
-	ext := sanitizeImageExtension(imageURL, extension)
-	hashBytes := sha1.Sum([]byte(strings.TrimSpace(imageURL)))
+func (service *ImageProxyService) resolveLocalFile(localRelPath string) (string, bool) {
+	if strings.TrimSpace(localRelPath) == "" {
+		return "", false
+	}
+	candidate := filepath.Join(service.dataDir, filepath.FromSlash(localRelPath))
+	if !fileExists(candidate) {
+		return "", false
+	}
+	return candidate, true
+}
+
+func (service *ImageProxyService) buildCachePath(kind string, remoteURL string, extension string) (string, string) {
+	ext := sanitizeImageExtension(remoteURL, extension)
+	hashBytes := sha1.Sum([]byte(strings.TrimSpace(remoteURL)))
 	hash := hex.EncodeToString(hashBytes[:])
-	relPath := filepath.ToSlash(filepath.Join("cache", "images", hash[:2], hash+"."+ext))
+	relPath := filepath.ToSlash(filepath.Join("cache", kind, hash[:2], hash+"."+ext))
 	absPath := filepath.Join(service.dataDir, filepath.FromSlash(relPath))
 	return relPath, absPath
 }

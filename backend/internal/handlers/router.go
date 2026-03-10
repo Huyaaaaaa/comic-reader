@@ -46,6 +46,7 @@ func NewRouter(
 		api.GET("/events/stream", eventsHandler.Stream)
 		api.POST("/sync/head", syncHandler.SyncHead)
 		api.POST("/sync/comics/:id/detail", syncHandler.SyncComicDetail)
+		api.GET("/covers/proxy", mediaHandler.ProxyCover)
 		api.GET("/images/proxy", mediaHandler.ProxyImage)
 		api.GET("/comics", comicsHandler.List)
 		api.GET("/comics/:id", comicsHandler.Detail)

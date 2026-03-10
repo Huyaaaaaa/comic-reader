@@ -276,6 +276,65 @@ ORDER BY sort ASC
 	return &models.ComicImagesResult{Images: images, Total: len(images)}, nil
 }
 
+func (store *ComicStore) GetCoverTarget(comicID int64) (*models.ComicCoverTarget, error) {
+	var row models.ComicCoverTarget
+	err := store.db.Raw(`
+SELECT id AS comic_id, cover_url, cover_local_rel_path AS local_rel_path
+FROM comics
+WHERE id = ?
+LIMIT 1
+`, comicID).Scan(&row).Error
+	if err != nil {
+		return nil, err
+	}
+	if row.ComicID == 0 {
+		return nil, gorm.ErrRecordNotFound
+	}
+	return &row, nil
+}
+
+func (store *ComicStore) MarkCoverCached(comicID int64, localRelPath string) error {
+	return store.db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Exec(`
+UPDATE comics
+SET cover_local_rel_path = ?,
+    updated_at = datetime('now')
+WHERE id = ?
+`, localRelPath, comicID).Error; err != nil {
+			return err
+		}
+
+		if err := tx.Exec(`
+INSERT INTO comic_cache_state (comic_id, meta_level, cover_ready, images_total, images_local, first_collected_at, updated_at)
+VALUES (
+  ?,
+  1,
+  1,
+  (SELECT COUNT(*) FROM comic_images WHERE comic_id = ?),
+  (SELECT COUNT(*) FROM comic_images WHERE comic_id = ? AND TRIM(COALESCE(local_rel_path, '')) != ''),
+  datetime('now'),
+  datetime('now')
+)
+ON CONFLICT(comic_id) DO UPDATE SET
+  meta_level = CASE WHEN comic_cache_state.meta_level < 1 THEN 1 ELSE comic_cache_state.meta_level END,
+  cover_ready = 1,
+  images_total = (SELECT COUNT(*) FROM comic_images WHERE comic_id = excluded.comic_id),
+  images_local = (SELECT COUNT(*) FROM comic_images WHERE comic_id = excluded.comic_id AND TRIM(COALESCE(local_rel_path, '')) != ''),
+  first_collected_at = COALESCE(comic_cache_state.first_collected_at, datetime('now')),
+  fully_cached_at = CASE
+    WHEN (SELECT COUNT(*) FROM comic_images WHERE comic_id = excluded.comic_id) > 0
+     AND (SELECT COUNT(*) FROM comic_images WHERE comic_id = excluded.comic_id AND TRIM(COALESCE(local_rel_path, '')) != '') = (SELECT COUNT(*) FROM comic_images WHERE comic_id = excluded.comic_id)
+    THEN datetime('now')
+    ELSE comic_cache_state.fully_cached_at
+  END,
+  updated_at = datetime('now')
+`, comicID, comicID, comicID).Error; err != nil {
+			return err
+		}
+		return nil
+	})
+}
+
 func (store *ComicStore) GetImageTarget(comicID int64, sort int) (*models.ComicImageTarget, error) {
 	var row models.ComicImageTarget
 	err := store.db.Raw(`

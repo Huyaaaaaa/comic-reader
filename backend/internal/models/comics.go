@@ -93,6 +93,12 @@ type ComicImageTarget struct {
 	LocalRelPath string
 }
 
+type ComicCoverTarget struct {
+	ComicID      int64
+	CoverURL     string
+	LocalRelPath string
+}
+
 type ComicQuery struct {
 	Page       int
 	PageSize   int

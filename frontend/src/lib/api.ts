@@ -34,6 +34,8 @@ export type ComicDetail = {
   authors: Array<{ id: number; name: string; position?: number }>
   tags: Array<{ id: number; name: string }>
   images_total: number
+  created_at: string
+  updated_at: string
   cache_state: {
     meta_level: number
     cover_ready: boolean
@@ -200,6 +202,8 @@ export function streamEvents(onEvent: (event: MessageEvent<string>) => void): Ev
     'sync.comic.started',
     'sync.comic.completed',
     'sync.comic.failed',
+    'cover.cache.completed',
+    'cover.cache.failed',
     'image.cache.completed',
     'image.cache.failed',
     'settings.updated',
@@ -223,6 +227,11 @@ export async function getComicDetail(id: number): Promise<ComicDetail> {
 
 export async function getComicImages(id: number): Promise<{ images: ComicImage[]; total: number }> {
   return request<{ images: ComicImage[]; total: number }>(`/api/comics/${id}/images`)
+}
+
+export function buildCoverProxyURL(comicId: number): string {
+  const query = new URLSearchParams({ comic_id: String(comicId) })
+  return `${API_BASE_URL}/api/covers/proxy?${query.toString()}`
 }
 
 export function buildImageProxyURL(image: ComicImage): string {
