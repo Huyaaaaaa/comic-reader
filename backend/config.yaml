@@ -1,0 +1,44 @@
+server:
+  port: 22330
+  mode: debug  # debug / release
+  cors_origins:
+    - "http://localhost:13131"
+    - "http://localhost:5173"
+    - "http://localhost:3000"
+
+database:
+  path: ./data/comics.db
+  max_idle_conns: 10
+  max_open_conns: 100
+
+crawler:
+  base_urls:
+    - "https://ahri8-qe1y2-c.monster"
+  active_base_url: "https://ahri8-qe1y2-c.monster"
+  image_cdn: "https://img.cimg-lux.top"
+  request_delay_min: 2.0
+  request_delay_max: 5.0
+  anti_ban_mode: safe  # standard / safe / extreme
+  user_agents:
+    - "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+    - "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+    - "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:121.0) Gecko/20100101 Firefox/121.0"
+
+cache:
+  cover_max: 2000
+  cover_target_size_kb: 50
+  cover_strategy: passive  # passive / auto
+  list_cache_enabled: true
+
+download:
+  dir: ./downloads
+  concurrency: 3
+  delay_min: 1.0
+  delay_max: 3.0
+
+log:
+  level: info  # debug / info / warn / error
+  file: ./logs/app.log
+  max_size: 100  # MB
+  max_backups: 3
+  max_age: 28  # days
