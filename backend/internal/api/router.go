@@ -9,14 +9,16 @@ type Router struct {
 	comicHandler    *ComicHandler
 	v2Handler       *V2Handler
 	downloadHandler *DownloadHandler
+	ieHandler       *ImportExportHandler
 }
 
 // NewRouter 创建路由器
-func NewRouter(comicHandler *ComicHandler, v2Handler *V2Handler, downloadHandler *DownloadHandler) *Router {
+func NewRouter(comicHandler *ComicHandler, v2Handler *V2Handler, downloadHandler *DownloadHandler, ieHandler *ImportExportHandler) *Router {
 	return &Router{
 		comicHandler:    comicHandler,
 		v2Handler:       v2Handler,
 		downloadHandler: downloadHandler,
+		ieHandler:       ieHandler,
 	}
 }
 
@@ -78,6 +80,22 @@ func (r *Router) Setup(engine *gin.Engine) {
 				downloads.POST("/:id/resume", r.downloadHandler.ResumeTask)
 				downloads.POST("/:id/cancel", r.downloadHandler.CancelTask)
 				downloads.POST("/:id/retry", r.downloadHandler.RetryTask)
+			}
+
+			// 导出
+			exportGroup := v2.Group("/export")
+			{
+				exportGroup.POST("/create", r.ieHandler.CreateExport)
+				exportGroup.GET("/status/:id", r.ieHandler.GetExportStatus)
+				exportGroup.GET("/download/:id", r.ieHandler.DownloadExport)
+			}
+
+			// 导入
+			importGroup := v2.Group("/import")
+			{
+				importGroup.POST("/scan", r.ieHandler.ScanImport)
+				importGroup.POST("/execute", r.ieHandler.ExecuteImport)
+				importGroup.GET("/status/:id", r.ieHandler.GetImportStatus)
 			}
 		}
 	}

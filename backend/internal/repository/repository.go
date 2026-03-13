@@ -87,6 +87,7 @@ func autoMigrate(db *gorm.DB) error {
 		&model.CacheState{},
 		&model.ReadingProgress{},
 		&model.SourceSite{},
+		&model.ImportExportJob{},
 	)
 }
 

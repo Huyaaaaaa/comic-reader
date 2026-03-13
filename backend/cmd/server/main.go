@@ -79,6 +79,7 @@ func main() {
 	searchService := service.NewSearchService(repo, comicService)
 	settingsService := service.NewSettingsService(repo)
 	downloadService := service.NewDownloadService(repo, dlEngine, &cfg.Download)
+	ieService := service.NewImportExportService(repo, &cfg.Download)
 
 	// 启动定时更新网站总数任务
 	stopStats := make(chan struct{})
@@ -88,6 +89,7 @@ func main() {
 	comicHandler := api.NewComicHandler(comicService)
 	v2Handler := api.NewV2Handler(searchService, settingsService, comicService, repo)
 	downloadHandler := api.NewDownloadHandler(downloadService)
+	ieHandler := api.NewImportExportHandler(ieService)
 
 	// 设置 Gin 模式
 	if cfg.Server.Mode == "release" {
@@ -100,7 +102,7 @@ func main() {
 	engine.Use(middleware.Logger())
 	engine.Use(middleware.CORS(cfg.Server.CorsOrigins))
 	// 设置路由
-	router := api.NewRouter(comicHandler, v2Handler, downloadHandler)
+	router := api.NewRouter(comicHandler, v2Handler, downloadHandler, ieHandler)
 	router.Setup(engine)
 
 	// 启动服务器

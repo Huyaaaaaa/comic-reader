@@ -196,6 +196,22 @@ type SourceSite struct {
 	CreatedAt time.Time  `json:"created_at"`
 }
 
+// ImportExportJob 导入导出任务
+type ImportExportJob struct {
+	ID            int        `gorm:"primaryKey;autoIncrement" json:"id"`
+	Direction     string     `gorm:"type:text;not null" json:"direction"`                // import/export
+	Scope         string     `gorm:"type:text;not null" json:"scope"`                    // single_comic/selected_offline_ready/all_cached_comics/all_covers/all_images
+	Status        string     `gorm:"type:text;not null;default:queued" json:"status"`    // queued/running/completed/failed/canceled
+	FilePath      string     `gorm:"type:text" json:"file_path"`
+	OptionsJSON   string     `gorm:"type:text;default:{}" json:"options_json"`
+	SummaryJSON   string     `gorm:"type:text;default:{}" json:"summary_json"`
+	ConflictCount int        `json:"conflict_count"`
+	LastError     string     `gorm:"type:text" json:"last_error,omitempty"`
+	CreatedAt     time.Time  `json:"created_at"`
+	UpdatedAt     time.Time  `json:"updated_at"`
+	FinishedAt    *time.Time `json:"finished_at,omitempty"`
+}
+
 // TableName 指定表名
 func (Comic) TableName() string              { return "comics" }
 func (ComicImage) TableName() string         { return "comic_images" }
@@ -214,3 +230,4 @@ func (UserSetting) TableName() string        { return "user_settings" }
 func (CacheState) TableName() string         { return "cache_states" }
 func (ReadingProgress) TableName() string    { return "reading_progress" }
 func (SourceSite) TableName() string         { return "source_sites" }
+func (ImportExportJob) TableName() string    { return "import_export_jobs" }

@@ -146,6 +146,66 @@ type DownloadTaskResponse struct {
 	ComicCoverURL string `json:"comic_cover_url,omitempty"`
 }
 
+// ExportRequest 导出请求
+type ExportRequest struct {
+	Scope    string `json:"scope" binding:"required"` // single_comic/selected_offline_ready/all_cached_comics/all_covers/all_images
+	ComicIDs []int  `json:"comic_ids"`
+}
+
+// ImportScanRequest 导入预扫描请求
+type ImportScanRequest struct {
+	FilePath string `json:"file_path" binding:"required"`
+}
+
+// ImportExecuteRequest 导入执行请求
+type ImportExecuteRequest struct {
+	FilePath string `json:"file_path" binding:"required"`
+	Strategy string `json:"strategy"` // overwrite/skip_existing/cancel
+}
+
+// ImportScanResponse 导入预扫描响应
+type ImportScanResponse struct {
+	Conflicts ImportConflicts       `json:"conflicts"`
+	Details   []ImportConflictDetail `json:"details"`
+}
+
+// ImportConflicts 冲突统计
+type ImportConflicts struct {
+	WillAdd       int `json:"will_add"`
+	WillOverwrite int `json:"will_overwrite"`
+	WillSkip      int `json:"will_skip"`
+}
+
+// ImportConflictDetail 冲突详情
+type ImportConflictDetail struct {
+	ComicID         int    `json:"comic_id"`
+	Title           string `json:"title"`
+	ConflictType    string `json:"conflict_type"` // add/overwrite/skip
+	LocalUpdatedAt  string `json:"local_updated_at,omitempty"`
+	ImportUpdatedAt string `json:"import_updated_at,omitempty"`
+}
+
+// ExportManifest 导出清单
+type ExportManifest struct {
+	Version    string              `json:"version"`
+	ExportedAt string             `json:"exported_at"`
+	Comics     []ExportComicEntry `json:"comics"`
+	TotalSize  int64              `json:"total_size"`
+}
+
+// ExportComicEntry 导出漫画条目
+type ExportComicEntry struct {
+	ID    int               `json:"id"`
+	Title string            `json:"title"`
+	Files []ExportFileEntry `json:"files"`
+}
+
+// ExportFileEntry 导出文件条目
+type ExportFileEntry struct {
+	Path string `json:"path"`
+	Size int64  `json:"size"`
+}
+
 // DashboardStats 仪表盘统计
 type DashboardStats struct {
 	TotalComics       int `json:"total_comics"`
