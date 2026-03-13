@@ -230,4 +230,19 @@ func (UserSetting) TableName() string        { return "user_settings" }
 func (CacheState) TableName() string         { return "cache_states" }
 func (ReadingProgress) TableName() string    { return "reading_progress" }
 func (SourceSite) TableName() string         { return "source_sites" }
+// UpdateRecord 更新记录
+type UpdateRecord struct {
+	ID             int        `gorm:"primaryKey;autoIncrement" json:"id"`
+	UpdateType     string     `gorm:"type:text;not null" json:"update_type"`   // content/app
+	Channel        string     `gorm:"type:text" json:"channel"`
+	RemoteVersion  string     `gorm:"type:text" json:"remote_version"`
+	CurrentVersion string     `gorm:"type:text" json:"current_version"`
+	HasUpdate      bool       `json:"has_update"`
+	CheckMode      string     `gorm:"type:text" json:"check_mode"` // manual/auto
+	Result         string     `gorm:"type:text" json:"result"`     // JSON summary
+	CheckedAt      time.Time  `json:"checked_at"`
+	AppliedAt      *time.Time `json:"applied_at,omitempty"`
+}
+
 func (ImportExportJob) TableName() string    { return "import_export_jobs" }
+func (UpdateRecord) TableName() string       { return "update_records" }

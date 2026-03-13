@@ -88,6 +88,7 @@ func autoMigrate(db *gorm.DB) error {
 		&model.ReadingProgress{},
 		&model.SourceSite{},
 		&model.ImportExportJob{},
+		&model.UpdateRecord{},
 	)
 }
 

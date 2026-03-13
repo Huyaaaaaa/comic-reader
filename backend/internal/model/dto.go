@@ -206,6 +206,37 @@ type ExportFileEntry struct {
 	Size int64  `json:"size"`
 }
 
+// ContentUpdateRequest 内容更新请求
+type ContentUpdateRequest struct {
+	Pages int    `json:"pages"`      // 扫描前 N 页，默认 2
+	Mode  string `json:"mode"`       // manual/auto
+}
+
+// ContentUpdateResponse 内容更新响应
+type ContentUpdateResponse struct {
+	HasUpdate   bool            `json:"has_update"`
+	NewComics   int             `json:"new_comics"`
+	ScannedPages int            `json:"scanned_pages"`
+	Details     []NewComicBrief `json:"details,omitempty"`
+	RecordID    int             `json:"record_id"`
+}
+
+// NewComicBrief 新漫画摘要
+type NewComicBrief struct {
+	ID       int    `json:"id"`
+	Title    string `json:"title"`
+	CoverURL string `json:"cover_url"`
+}
+
+// AppUpdateResponse 应用更新响应
+type AppUpdateResponse struct {
+	HasUpdate      bool   `json:"has_update"`
+	CurrentVersion string `json:"current_version"`
+	RemoteVersion  string `json:"remote_version,omitempty"`
+	ReleaseNotes   string `json:"release_notes,omitempty"`
+	RecordID       int    `json:"record_id"`
+}
+
 // DashboardStats 仪表盘统计
 type DashboardStats struct {
 	TotalComics       int `json:"total_comics"`
