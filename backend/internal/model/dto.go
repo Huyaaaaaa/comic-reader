@@ -118,6 +118,34 @@ type HistoryWithProgress struct {
 	TotalPages int     `json:"total_pages"`
 }
 
+// CreateDownloadRequest 创建下载任务请求
+type CreateDownloadRequest struct {
+	ComicID  int    `json:"comic_id" binding:"required"`
+	TaskType string `json:"task_type"`
+}
+
+// DownloadPrecheckRequest 下载预检查请求
+type DownloadPrecheckRequest struct {
+	ComicIDs []int `json:"comic_ids" binding:"required"`
+}
+
+// DownloadPrecheckResponse 下载预检查响应
+type DownloadPrecheckResponse struct {
+	TargetPath     string   `json:"target_path"`
+	AvailableSpace int64    `json:"available_space"`
+	ReservedSpace  int64    `json:"reserved_space"`
+	EstimatedSize  int64    `json:"estimated_size"`
+	CanDownload    bool     `json:"can_download"`
+	Warnings       []string `json:"warnings"`
+}
+
+// DownloadTaskResponse 下载任务响应（附带漫画信息）
+type DownloadTaskResponse struct {
+	DownloadTask
+	ComicTitle    string `json:"comic_title,omitempty"`
+	ComicCoverURL string `json:"comic_cover_url,omitempty"`
+}
+
 // DashboardStats 仪表盘统计
 type DashboardStats struct {
 	TotalComics       int `json:"total_comics"`

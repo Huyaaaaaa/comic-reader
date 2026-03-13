@@ -104,16 +104,25 @@ type ComicListCache struct {
 	CachedAt    time.Time `json:"cached_at"`
 }
 
-// DownloadTask 下载任务
+// DownloadTask 下载任务（v2: 7状态 + 锁机制 + 断点续传）
 type DownloadTask struct {
-	ComicID   int       `gorm:"primaryKey" json:"comic_id"`
-	Title     string    `gorm:"type:text" json:"title"`
-	Total     int       `json:"total"`
-	Current   int       `json:"current"`
-	Status    string    `json:"status"` // pending / downloading / completed / failed
-	Error     string    `gorm:"type:text" json:"error,omitempty"`
-	CreatedAt time.Time `json:"created_at"`
-	UpdatedAt time.Time `json:"updated_at"`
+	ID             int        `gorm:"primaryKey;autoIncrement" json:"id"`
+	ComicID        int        `gorm:"index" json:"comic_id"`
+	UserID         int        `gorm:"default:1" json:"user_id"`
+	Title          string     `gorm:"type:text" json:"title"`
+	TaskType       string     `gorm:"type:text;default:images" json:"task_type"`
+	TriggerSource  string     `gorm:"type:text;default:manual" json:"trigger_source"`
+	Status         string     `gorm:"type:text;default:queued;index" json:"status"` // queued/downloading/verifying/completed/failed/paused/canceled
+	Priority       int        `gorm:"default:0" json:"priority"`
+	Total          int        `json:"total"`
+	Current        int        `json:"current"`
+	RetryCount     int        `gorm:"default:0" json:"retry_count"`
+	LockToken      string     `gorm:"type:text" json:"lock_token,omitempty"`
+	LockAcquiredAt *time.Time `json:"lock_acquired_at,omitempty"`
+	LastError      string     `gorm:"type:text" json:"last_error,omitempty"`
+	CreatedAt      time.Time  `json:"created_at"`
+	UpdatedAt      time.Time  `json:"updated_at"`
+	FinishedAt     *time.Time `json:"finished_at,omitempty"`
 }
 
 // CoverCacheQueue 封面缓存队列

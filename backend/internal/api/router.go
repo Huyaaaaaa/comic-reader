@@ -6,15 +6,17 @@ import (
 
 // Router 路由器
 type Router struct {
-	comicHandler *ComicHandler
-	v2Handler    *V2Handler
+	comicHandler    *ComicHandler
+	v2Handler       *V2Handler
+	downloadHandler *DownloadHandler
 }
 
 // NewRouter 创建路由器
-func NewRouter(comicHandler *ComicHandler, v2Handler *V2Handler) *Router {
+func NewRouter(comicHandler *ComicHandler, v2Handler *V2Handler, downloadHandler *DownloadHandler) *Router {
 	return &Router{
-		comicHandler: comicHandler,
-		v2Handler:    v2Handler,
+		comicHandler:    comicHandler,
+		v2Handler:       v2Handler,
+		downloadHandler: downloadHandler,
 	}
 }
 
@@ -65,6 +67,18 @@ func (r *Router) Setup(engine *gin.Engine) {
 			v2.PUT("/history/:id/progress", r.v2Handler.UpdateProgress)
 			v2.GET("/offline/comics", r.v2Handler.GetOfflineComics)
 			v2.GET("/comics/:id/cache", r.v2Handler.GetComicCacheState)
+
+			// 下载管理
+			downloads := v2.Group("/downloads")
+			{
+				downloads.POST("", r.downloadHandler.CreateTask)
+				downloads.POST("/precheck", r.downloadHandler.Precheck)
+				downloads.GET("", r.downloadHandler.GetTasks)
+				downloads.POST("/:id/pause", r.downloadHandler.PauseTask)
+				downloads.POST("/:id/resume", r.downloadHandler.ResumeTask)
+				downloads.POST("/:id/cancel", r.downloadHandler.CancelTask)
+				downloads.POST("/:id/retry", r.downloadHandler.RetryTask)
+			}
 		}
 	}
 }

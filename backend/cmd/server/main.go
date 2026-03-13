@@ -4,6 +4,7 @@ import (
 	"comic-viewer-claude/internal/api"
 	"comic-viewer-claude/internal/cache"
 	"comic-viewer-claude/internal/crawler"
+	"comic-viewer-claude/internal/download"
 	"comic-viewer-claude/internal/middleware"
 	"comic-viewer-claude/internal/repository"
 	"comic-viewer-claude/internal/service"
@@ -68,10 +69,16 @@ func main() {
 	// 执行数据迁移
 	repository.RunMigration(repo.GetDB())
 
+	// 初始化下载引擎
+	dlEngine := download.NewEngine(repo, crawlerClient, &cfg.Download, &cfg.Crawler)
+	dlEngine.Start()
+	defer dlEngine.Stop()
+
 	// 初始化服务
 	comicService := service.NewComicService(repo, crawlerClient, coverCache)
 	searchService := service.NewSearchService(repo, comicService)
 	settingsService := service.NewSettingsService(repo)
+	downloadService := service.NewDownloadService(repo, dlEngine, &cfg.Download)
 
 	// 启动定时更新网站总数任务
 	stopStats := make(chan struct{})
@@ -80,6 +87,7 @@ func main() {
 	// 初始化处理器
 	comicHandler := api.NewComicHandler(comicService)
 	v2Handler := api.NewV2Handler(searchService, settingsService, comicService, repo)
+	downloadHandler := api.NewDownloadHandler(downloadService)
 
 	// 设置 Gin 模式
 	if cfg.Server.Mode == "release" {
@@ -92,7 +100,7 @@ func main() {
 	engine.Use(middleware.Logger())
 	engine.Use(middleware.CORS(cfg.Server.CorsOrigins))
 	// 设置路由
-	router := api.NewRouter(comicHandler, v2Handler)
+	router := api.NewRouter(comicHandler, v2Handler, downloadHandler)
 	router.Setup(engine)
 
 	// 启动服务器

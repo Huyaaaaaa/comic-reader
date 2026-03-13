@@ -1,6 +1,6 @@
 module comic-viewer-claude
 
-go 1.21
+go 1.25.0
 
 require (
 	github.com/PuerkitoBio/goquery v1.8.1
@@ -52,6 +52,7 @@ require (
 	golang.org/x/exp v0.0.0-20230905200255-921286631fa9 // indirect
 	golang.org/x/image v0.0.0-20191009234506-e7c1f5e7dbb8 // indirect
 	golang.org/x/net v0.19.0 // indirect
+	golang.org/x/sync v0.20.0 // indirect
 	golang.org/x/sys v0.15.0 // indirect
 	golang.org/x/text v0.14.0 // indirect
 	google.golang.org/protobuf v1.31.0 // indirect

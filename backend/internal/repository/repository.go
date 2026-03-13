@@ -33,6 +33,9 @@ func New(dbPath string) (*Repository, error) {
 		return nil, fmt.Errorf("打开数据库失败: %w", err)
 	}
 
+	// 预迁移：处理需要重建的表
+	preMigrate(db)
+
 	// 自动迁移
 	if err := autoMigrate(db); err != nil {
 		return nil, fmt.Errorf("数据库迁移失败: %w", err)
@@ -48,6 +51,20 @@ func New(dbPath string) (*Repository, error) {
 	sqlDB.SetConnMaxLifetime(time.Hour)
 
 	return &Repository{db: db}, nil
+}
+
+// preMigrate 预迁移：处理需要重建的表（在 AutoMigrate 之前运行）
+func preMigrate(db *gorm.DB) {
+	// download_tasks 表 PK 从 comic_id 改为 auto-increment id
+	var idColCount int64
+	db.Raw("SELECT COUNT(*) FROM pragma_table_info('download_tasks') WHERE name = 'id'").Scan(&idColCount)
+	if idColCount == 0 {
+		var tableExists int64
+		db.Raw("SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='download_tasks'").Scan(&tableExists)
+		if tableExists > 0 {
+			db.Exec("DROP TABLE download_tasks")
+		}
+	}
 }
 
 // autoMigrate 自动迁移数据库表
@@ -324,10 +341,22 @@ func (r *Repository) GetFavorites(limit, offset int) ([]model.ComicFavorite, int
 
 // === DownloadTask 相关 ===
 
-// GetDownloadTask 获取下载任务
-func (r *Repository) GetDownloadTask(comicID int) (*model.DownloadTask, error) {
+// GetDownloadTask 按ID获取下载任务
+func (r *Repository) GetDownloadTask(id int) (*model.DownloadTask, error) {
 	var task model.DownloadTask
-	err := r.db.First(&task, comicID).Error
+	err := r.db.First(&task, id).Error
+	if err != nil {
+		return nil, err
+	}
+	return &task, nil
+}
+
+// GetDownloadTaskByComic 按漫画ID获取活跃下载任务
+func (r *Repository) GetDownloadTaskByComic(comicID, userID int) (*model.DownloadTask, error) {
+	var task model.DownloadTask
+	err := r.db.Where("comic_id = ? AND user_id = ? AND status NOT IN ?",
+		comicID, userID, []string{"completed", "canceled", "failed"}).
+		First(&task).Error
 	if err != nil {
 		return nil, err
 	}
@@ -339,11 +368,98 @@ func (r *Repository) SaveDownloadTask(task *model.DownloadTask) error {
 	return r.db.Save(task).Error
 }
 
+// CreateDownloadTask 创建下载任务
+func (r *Repository) CreateDownloadTask(task *model.DownloadTask) error {
+	return r.db.Create(task).Error
+}
+
 // GetPendingDownloadTasks 获取待处理的下载任务
 func (r *Repository) GetPendingDownloadTasks() ([]model.DownloadTask, error) {
 	var tasks []model.DownloadTask
-	err := r.db.Where("status IN ?", []string{"pending", "downloading"}).Find(&tasks).Error
+	err := r.db.Where("status IN ?", []string{"queued", "downloading"}).
+		Order("priority DESC, created_at ASC").Find(&tasks).Error
 	return tasks, err
+}
+
+// GetDownloadTasks 按分组获取下载任务
+func (r *Repository) GetDownloadTasks(group string) ([]model.DownloadTask, error) {
+	var tasks []model.DownloadTask
+	query := r.db.Model(&model.DownloadTask{})
+
+	switch group {
+	case "active":
+		query = query.Where("status NOT IN ?", []string{"completed", "canceled"})
+	case "completed":
+		query = query.Where("status = ?", "completed")
+	default:
+		// 返回所有
+	}
+
+	err := query.Order("updated_at DESC").Find(&tasks).Error
+	return tasks, err
+}
+
+// UpdateDownloadTaskStatus 更新下载任务状态
+func (r *Repository) UpdateDownloadTaskStatus(id int, status string, updates map[string]interface{}) error {
+	if updates == nil {
+		updates = map[string]interface{}{}
+	}
+	updates["status"] = status
+	updates["updated_at"] = time.Now()
+	return r.db.Model(&model.DownloadTask{}).Where("id = ?", id).Updates(updates).Error
+}
+
+// GetQueuedTasks 获取排队中的任务（供下载引擎消费）
+func (r *Repository) GetQueuedTasks(limit int) ([]model.DownloadTask, error) {
+	var tasks []model.DownloadTask
+	err := r.db.Where("status = ?", "queued").
+		Order("priority DESC, created_at ASC").
+		Limit(limit).Find(&tasks).Error
+	return tasks, err
+}
+
+// AcquireTaskLock 获取任务锁
+func (r *Repository) AcquireTaskLock(taskID int, token string) error {
+	now := time.Now()
+	result := r.db.Model(&model.DownloadTask{}).
+		Where("id = ? AND (lock_token = '' OR lock_token IS NULL OR lock_acquired_at < ?)",
+			taskID, now.Add(-5*time.Minute)).
+		Updates(map[string]interface{}{
+			"lock_token":       token,
+			"lock_acquired_at": now,
+			"status":           "downloading",
+			"updated_at":       now,
+		})
+	if result.RowsAffected == 0 {
+		return fmt.Errorf("无法获取任务锁: task_id=%d", taskID)
+	}
+	return result.Error
+}
+
+// ReleaseTaskLock 释放任务锁
+func (r *Repository) ReleaseTaskLock(taskID int) error {
+	return r.db.Model(&model.DownloadTask{}).Where("id = ?", taskID).
+		Updates(map[string]interface{}{
+			"lock_token":       "",
+			"lock_acquired_at": nil,
+			"updated_at":       time.Now(),
+		}).Error
+}
+
+// RecoverStaleTasks 恢复停滞的任务（启动时调用）
+func (r *Repository) RecoverStaleTasks() (int64, error) {
+	now := time.Now()
+	staleTime := now.Add(-5 * time.Minute)
+	result := r.db.Model(&model.DownloadTask{}).
+		Where("status IN ? AND lock_acquired_at < ?",
+			[]string{"downloading", "verifying"}, staleTime).
+		Updates(map[string]interface{}{
+			"status":           "queued",
+			"lock_token":       "",
+			"lock_acquired_at": nil,
+			"updated_at":       now,
+		})
+	return result.RowsAffected, result.Error
 }
 
 // === CoverCacheQueue 相关 ===
@@ -432,11 +548,11 @@ func (r *Repository) GetDashboardStats() (*model.DashboardStats, error) {
 	stats.HistoryCount = int(historyCount)
 
 	// 下载中的任务数
-	r.db.Model(&model.DownloadTask{}).Where("status = ?", "downloading").Count(&downloadingCount)
+	r.db.Model(&model.DownloadTask{}).Where("status IN ?", []string{"downloading", "verifying"}).Count(&downloadingCount)
 	stats.DownloadingCount = int(downloadingCount)
 
 	// 待下载任务数
-	r.db.Model(&model.DownloadTask{}).Where("status = ?", "pending").Count(&pendingDownloads)
+	r.db.Model(&model.DownloadTask{}).Where("status = ?", "queued").Count(&pendingDownloads)
 	stats.PendingDownloads = int(pendingDownloads)
 
 	return stats, nil
