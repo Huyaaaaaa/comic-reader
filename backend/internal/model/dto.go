@@ -238,6 +238,29 @@ type AppUpdateResponse struct {
 }
 
 // DashboardStats 仪表盘统计
+
+// AddSourceRequest 添加源站请求
+type AddSourceRequest struct {
+	URL      string `json:"url" binding:"required"`
+	Name     string `json:"name"`
+	ImageCDN string `json:"image_cdn"`
+}
+
+// SourceHealthResponse 源站健康检查响应
+type SourceHealthResponse struct {
+	ID      int    `json:"id"`
+	URL     string `json:"url"`
+	Status  string `json:"status"`
+	Latency int    `json:"latency_ms"`
+	Error   string `json:"error,omitempty"`
+}
+
+// SSEEvent SSE 事件
+type SSEEvent struct {
+	Type string      `json:"type"`
+	Data interface{} `json:"data"`
+}
+
 type DashboardStats struct {
 	TotalComics       int `json:"total_comics"`
 	CachedComics      int `json:"cached_comics"`

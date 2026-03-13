@@ -11,16 +11,20 @@ type Router struct {
 	downloadHandler *DownloadHandler
 	ieHandler       *ImportExportHandler
 	updateHandler   *UpdateHandler
+	sourceHandler   *SourceHandler
+	eventHandler    *EventHandler
 }
 
 // NewRouter 创建路由器
-func NewRouter(comicHandler *ComicHandler, v2Handler *V2Handler, downloadHandler *DownloadHandler, ieHandler *ImportExportHandler, updateHandler *UpdateHandler) *Router {
+func NewRouter(comicHandler *ComicHandler, v2Handler *V2Handler, downloadHandler *DownloadHandler, ieHandler *ImportExportHandler, updateHandler *UpdateHandler, sourceHandler *SourceHandler, eventHandler *EventHandler) *Router {
 	return &Router{
 		comicHandler:    comicHandler,
 		v2Handler:       v2Handler,
 		downloadHandler: downloadHandler,
 		ieHandler:       ieHandler,
 		updateHandler:   updateHandler,
+		sourceHandler:   sourceHandler,
+		eventHandler:    eventHandler,
 	}
 }
 
@@ -57,6 +61,9 @@ func (r *Router) Setup(engine *gin.Engine) {
 		api.GET("/health", func(c *gin.Context) {
 			c.JSON(200, gin.H{"status": "ok"})
 		})
+
+		// SSE 事件流
+		api.GET("/events", r.eventHandler.StreamEvents)
 
 		// V2 API 路由组
 		v2 := api.Group("/v2")
@@ -105,6 +112,15 @@ func (r *Router) Setup(engine *gin.Engine) {
 			{
 				updates.POST("/check-content", r.updateHandler.CheckContentUpdate)
 				updates.POST("/check-app", r.updateHandler.CheckAppUpdate)
+			}
+
+			// 源站管理
+			sources := v2.Group("/sources")
+			{
+				sources.GET("", r.sourceHandler.GetSources)
+				sources.POST("", r.sourceHandler.AddSource)
+				sources.DELETE("/:id", r.sourceHandler.DeleteSource)
+				sources.POST("/:id/check", r.sourceHandler.CheckSourceHealth)
 			}
 		}
 	}

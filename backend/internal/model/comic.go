@@ -189,8 +189,10 @@ type SourceSite struct {
 	ID        int        `gorm:"primaryKey;autoIncrement" json:"id"`
 	URL       string     `gorm:"type:text;not null" json:"url"`
 	Name      string     `gorm:"type:text" json:"name"`
+	ImageCDN  string     `gorm:"type:text" json:"image_cdn"`
 	Priority  int        `json:"priority"`
-	Status    string     `gorm:"type:text;default:active" json:"status"`
+	Status    string     `gorm:"type:text;default:active" json:"status"` // active/inactive/failed
+	FailCount int        `gorm:"default:0" json:"fail_count"`
 	Latency   int        `json:"latency"`
 	LastCheck *time.Time `json:"last_check,omitempty"`
 	CreatedAt time.Time  `json:"created_at"`

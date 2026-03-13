@@ -5,9 +5,11 @@ import (
 	"comic-viewer-claude/internal/cache"
 	"comic-viewer-claude/internal/crawler"
 	"comic-viewer-claude/internal/download"
+	"comic-viewer-claude/internal/event"
 	"comic-viewer-claude/internal/middleware"
 	"comic-viewer-claude/internal/repository"
 	"comic-viewer-claude/internal/service"
+	"comic-viewer-claude/internal/source"
 	"comic-viewer-claude/pkg/config"
 	"comic-viewer-claude/pkg/logger"
 	"fmt"
@@ -82,9 +84,22 @@ func main() {
 	ieService := service.NewImportExportService(repo, &cfg.Download)
 	updateService := service.NewUpdateService(repo, comicService)
 
+	// 初始化源站管理器
+	sourceManager := source.NewManager(repo)
+	if err := sourceManager.Load(); err != nil {
+		logger.Warn("加载源站列表失败", zap.Error(err))
+	}
+
+	// 初始化 SSE 事件服务
+	eventService := event.NewService()
+
 	// 启动定时更新网站总数任务
 	stopStats := make(chan struct{})
 	go comicService.StartSiteStatsUpdater(stopStats)
+
+	// 启动源站健康检查
+	stopHealth := make(chan struct{})
+	go sourceManager.StartHealthChecker(stopHealth)
 
 	// 初始化处理器
 	comicHandler := api.NewComicHandler(comicService)
@@ -92,6 +107,8 @@ func main() {
 	downloadHandler := api.NewDownloadHandler(downloadService)
 	ieHandler := api.NewImportExportHandler(ieService)
 	updateHandler := api.NewUpdateHandler(updateService)
+	sourceHandler := api.NewSourceHandler(sourceManager)
+	eventHandler := api.NewEventHandler(eventService)
 
 	// 设置 Gin 模式
 	if cfg.Server.Mode == "release" {
@@ -104,7 +121,7 @@ func main() {
 	engine.Use(middleware.Logger())
 	engine.Use(middleware.CORS(cfg.Server.CorsOrigins))
 	// 设置路由
-	router := api.NewRouter(comicHandler, v2Handler, downloadHandler, ieHandler, updateHandler)
+	router := api.NewRouter(comicHandler, v2Handler, downloadHandler, ieHandler, updateHandler, sourceHandler, eventHandler)
 	router.Setup(engine)
 
 	// 启动服务器
@@ -124,5 +141,6 @@ func main() {
 	<-quit
 
 	close(stopStats)
+	close(stopHealth)
 	logger.Info("服务器正在关闭...")
 }
