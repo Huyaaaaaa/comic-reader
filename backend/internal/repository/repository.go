@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"syscall"
 	"time"
 
 	"gorm.io/driver/sqlite"
@@ -525,6 +526,13 @@ func (r *Repository) GetDashboardStats() (*model.DashboardStats, error) {
 	var historyCount int64
 	var downloadingCount int64
 	var pendingDownloads int64
+	var completedDownloads int64
+	var failedDownloads int64
+	var l1Count int64
+	var l2Count int64
+	var l3Count int64
+	var activeSources int64
+	var totalSources int64
 
 	// 总漫画数
 	r.db.Model(&model.Comic{}).Count(&totalComics)
@@ -556,6 +564,37 @@ func (r *Repository) GetDashboardStats() (*model.DashboardStats, error) {
 	// 待下载任务数
 	r.db.Model(&model.DownloadTask{}).Where("status = ?", "queued").Count(&pendingDownloads)
 	stats.PendingDownloads = int(pendingDownloads)
+
+	// 已完成下载数
+	r.db.Model(&model.DownloadTask{}).Where("status = ?", "completed").Count(&completedDownloads)
+	stats.CompletedDownloads = int(completedDownloads)
+
+	// 失败下载数
+	r.db.Model(&model.DownloadTask{}).Where("status = ?", "failed").Count(&failedDownloads)
+	stats.FailedDownloads = int(failedDownloads)
+
+	// L1/L2/L3 缓存统计
+	r.db.Model(&model.CacheState{}).Where("l1_cached = ?", true).Count(&l1Count)
+	stats.L1CachedCount = int(l1Count)
+	r.db.Model(&model.CacheState{}).Where("l2_cached = ?", true).Count(&l2Count)
+	stats.L2CachedCount = int(l2Count)
+	r.db.Model(&model.CacheState{}).Where("l3_cached = ?", true).Count(&l3Count)
+	stats.L3CachedCount = int(l3Count)
+
+	// 源站统计
+	r.db.Model(&model.SourceSite{}).Where("status = ?", "active").Count(&activeSources)
+	stats.ActiveSources = int(activeSources)
+	r.db.Model(&model.SourceSite{}).Count(&totalSources)
+	stats.TotalSources = int(totalSources)
+
+	// 磁盘空间（当前工作目录所在分区）
+	var fsStat syscall.Statfs_t
+	if err := syscall.Statfs(".", &fsStat); err == nil {
+		totalDisk := int64(fsStat.Blocks) * int64(fsStat.Bsize)
+		availDisk := int64(fsStat.Bavail) * int64(fsStat.Bsize)
+		stats.DiskUsedMB = int((totalDisk - availDisk) / 1024 / 1024)
+		stats.DiskAvailMB = int(availDisk / 1024 / 1024)
+	}
 
 	return stats, nil
 }

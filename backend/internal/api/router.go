@@ -13,10 +13,12 @@ type Router struct {
 	updateHandler   *UpdateHandler
 	sourceHandler   *SourceHandler
 	eventHandler    *EventHandler
+	imageHandler    *ImageHandler
+	metaHandler     *MetaHandler
 }
 
 // NewRouter 创建路由器
-func NewRouter(comicHandler *ComicHandler, v2Handler *V2Handler, downloadHandler *DownloadHandler, ieHandler *ImportExportHandler, updateHandler *UpdateHandler, sourceHandler *SourceHandler, eventHandler *EventHandler) *Router {
+func NewRouter(comicHandler *ComicHandler, v2Handler *V2Handler, downloadHandler *DownloadHandler, ieHandler *ImportExportHandler, updateHandler *UpdateHandler, sourceHandler *SourceHandler, eventHandler *EventHandler, imageHandler *ImageHandler, metaHandler *MetaHandler) *Router {
 	return &Router{
 		comicHandler:    comicHandler,
 		v2Handler:       v2Handler,
@@ -25,6 +27,8 @@ func NewRouter(comicHandler *ComicHandler, v2Handler *V2Handler, downloadHandler
 		updateHandler:   updateHandler,
 		sourceHandler:   sourceHandler,
 		eventHandler:    eventHandler,
+		imageHandler:    imageHandler,
+		metaHandler:     metaHandler,
 	}
 }
 
@@ -64,6 +68,9 @@ func (r *Router) Setup(engine *gin.Engine) {
 
 		// SSE 事件流
 		api.GET("/events", r.eventHandler.StreamEvents)
+
+		// 图片代理
+		api.GET("/images/proxy", r.imageHandler.ProxyImage)
 
 		// V2 API 路由组
 		v2 := api.Group("/v2")
@@ -122,6 +129,17 @@ func (r *Router) Setup(engine *gin.Engine) {
 				sources.DELETE("/:id", r.sourceHandler.DeleteSource)
 				sources.POST("/:id/check", r.sourceHandler.CheckSourceHealth)
 			}
+
+			// 作者管理
+			authors := v2.Group("/authors")
+			{
+				authors.GET("", r.metaHandler.GetAuthors)
+				authors.GET("/:id/comics", r.metaHandler.GetAuthorComics)
+			}
+
+			// 标签和分类
+			v2.GET("/tags", r.metaHandler.GetTags)
+			v2.GET("/categories", r.metaHandler.GetCategories)
 		}
 	}
 }

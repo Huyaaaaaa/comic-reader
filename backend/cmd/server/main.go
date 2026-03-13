@@ -109,6 +109,8 @@ func main() {
 	updateHandler := api.NewUpdateHandler(updateService)
 	sourceHandler := api.NewSourceHandler(sourceManager)
 	eventHandler := api.NewEventHandler(eventService)
+	imageHandler := api.NewImageHandler(repo, crawlerClient)
+	metaHandler := api.NewMetaHandler(repo)
 
 	// 设置 Gin 模式
 	if cfg.Server.Mode == "release" {
@@ -121,7 +123,7 @@ func main() {
 	engine.Use(middleware.Logger())
 	engine.Use(middleware.CORS(cfg.Server.CorsOrigins))
 	// 设置路由
-	router := api.NewRouter(comicHandler, v2Handler, downloadHandler, ieHandler, updateHandler, sourceHandler, eventHandler)
+	router := api.NewRouter(comicHandler, v2Handler, downloadHandler, ieHandler, updateHandler, sourceHandler, eventHandler, imageHandler, metaHandler)
 	router.Setup(engine)
 
 	// 启动服务器

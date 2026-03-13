@@ -270,4 +270,13 @@ type DashboardStats struct {
 	HistoryCount      int `json:"history_count"`
 	DownloadingCount  int `json:"downloading_count"`
 	PendingDownloads  int `json:"pending_downloads"`
+	CompletedDownloads int `json:"completed_downloads"`
+	FailedDownloads   int `json:"failed_downloads"`
+	L1CachedCount     int `json:"l1_cached_count"`
+	L2CachedCount     int `json:"l2_cached_count"`
+	L3CachedCount     int `json:"l3_cached_count"`
+	ActiveSources     int `json:"active_sources"`
+	TotalSources      int `json:"total_sources"`
+	DiskUsedMB        int `json:"disk_used_mb"`
+	DiskAvailMB       int `json:"disk_avail_mb"`
 }
