@@ -16,9 +16,9 @@ import (
 
 // ComicService 漫画服务
 type ComicService struct {
-	repo         *repository.Repository
-	crawler      *crawler.Client
-	coverCache   *cache.CoverCacheManager
+	repo       *repository.Repository
+	crawler    *crawler.Client
+	coverCache *cache.CoverCacheManager
 }
 
 // NewComicService 创建漫画服务
@@ -48,7 +48,7 @@ func (s *ComicService) GetList(page, pageSize int, useCache bool) (*model.ListRe
 
 	// 计算需要哪些网站页
 	startSitePage := startItem/sitePageSize + 1
-	endSitePage := (endItem - 1)/sitePageSize + 1
+	endSitePage := (endItem-1)/sitePageSize + 1
 
 	// 获取所有需要的网站页数据
 	var allItems []model.ComicListItem
@@ -142,10 +142,10 @@ func (s *ComicService) fetchSitePage(sitePage int, useCache bool) ([]model.Comic
 	return items, false, nil
 }
 
-// GetFilteredList 按标签/作者筛选漫画（从网站获取）
-func (s *ComicService) GetFilteredList(page int, tagID, authorID *int) (*model.ListResponse, error) {
+// GetFilteredList 按标签/分类/作者筛选漫画（从网站获取）
+func (s *ComicService) GetFilteredList(page int, tagID, categoryID, authorID *int, author string) (*model.ListResponse, error) {
 	logger.Info("从网站筛选漫画", zap.Int("page", page))
-	html, err := s.crawler.GetListPage(page, tagID, nil, authorID, "")
+	html, err := s.crawler.GetListPage(page, tagID, categoryID, authorID, author)
 	if err != nil {
 		return nil, fmt.Errorf("获取筛选页失败: %w", err)
 	}
@@ -154,6 +154,9 @@ func (s *ComicService) GetFilteredList(page int, tagID, authorID *int) (*model.L
 	if err != nil {
 		return nil, fmt.Errorf("解析筛选页失败: %w", err)
 	}
+
+	// 筛选结果同样属于已获取的列表元数据，应记作 L1。
+	go s.markListItemsL1(items)
 
 	// 加载封面缓存
 	for i := range items {
@@ -169,6 +172,14 @@ func (s *ComicService) GetFilteredList(page int, tagID, authorID *int) (*model.L
 		Total:       int64(totalPages * len(items)),
 		FromCache:   false,
 	}, nil
+}
+
+func (s *ComicService) markListItemsL1(items []model.ComicListItem) {
+	for _, item := range items {
+		if err := s.repo.UpsertCacheStateL1(item.ID); err != nil {
+			logger.Warn("更新筛选结果 cache_state L1 失败", zap.Int("comic_id", item.ID), zap.Error(err))
+		}
+	}
 }
 
 // saveListCache 保存列表缓存
@@ -196,13 +207,7 @@ func (s *ComicService) saveListCache(page int, items []model.ComicListItem) {
 		logger.Error("保存列表缓存失败", zap.Error(err))
 	}
 
-	// 更新 cache_states L1
-	for _, item := range items {
-		cs := &model.CacheState{ComicID: item.ID, L1Cached: true}
-		if err := s.repo.UpsertCacheState(cs); err != nil {
-			logger.Warn("更新 cache_state L1 失败", zap.Int("comic_id", item.ID), zap.Error(err))
-		}
-	}
+	s.markListItemsL1(items)
 }
 
 // GetDetail 获取漫画详情
@@ -314,18 +319,15 @@ func (s *ComicService) saveComicDetail(detail *model.ComicDetail) {
 	}
 
 	// 更新 cache_states L2
-	if cs, err := s.repo.GetCacheState(detail.ID); err == nil {
-		cs.L2Cached = true
-		s.repo.UpsertCacheState(cs)
-	} else {
-		s.repo.UpsertCacheState(&model.CacheState{ComicID: detail.ID, L2Cached: true})
+	if err := s.repo.UpsertCacheStateL2(detail.ID); err != nil {
+		logger.Warn("更新 cache_state L2 失败", zap.Int("comic_id", detail.ID), zap.Error(err))
 	}
 
 	// 保存标签
 	if len(detail.Tags) > 0 {
 		tagIDs := make([]int, 0, len(detail.Tags))
 		for _, tag := range detail.Tags {
-		// 先保存标签
+			// 先保存标签
 			if err := s.repo.SaveTag(&model.Tag{ID: tag.TagID, Name: tag.TagName}); err != nil {
 				logger.Warn("保存标签失败", zap.Error(err))
 			}
@@ -347,7 +349,7 @@ func (s *ComicService) GetReaderImages(comicID int) ([]model.ImageInfo, error) {
 		for i, img := range images {
 			result[i] = model.ImageInfo{
 				Sort:      img.Sort,
-			ComicID:   img.ComicID,
+				ComicID:   img.ComicID,
 				Filename:  img.Filename,
 				Extension: img.Extension,
 				URL:       img.URL,
@@ -369,6 +371,13 @@ func (s *ComicService) GetReaderImages(comicID int) ([]model.ImageInfo, error) {
 		return nil, fmt.Errorf("解析阅读页失败: %w", err)
 	}
 
+	// 修正 sort=0 的情况，用索引代替
+	for i := range images2 {
+		if images2[i].Sort == 0 {
+			images2[i].Sort = i + 1
+		}
+	}
+
 	// 保存到数据库
 	go s.saveComicImages(comicID, images2)
 
@@ -379,9 +388,13 @@ func (s *ComicService) GetReaderImages(comicID int) ([]model.ImageInfo, error) {
 func (s *ComicService) saveComicImages(comicID int, images []model.ImageInfo) {
 	dbImages := make([]model.ComicImage, len(images))
 	for i, img := range images {
+		sort := img.Sort
+		if sort == 0 {
+			sort = i + 1 // 原始 sort 为 0 时用索引代替，避免主键冲突
+		}
 		dbImages[i] = model.ComicImage{
 			ComicID:   img.ComicID,
-			Sort:      img.Sort,
+			Sort:      sort,
 			Filename:  img.Filename,
 			Extension: img.Extension,
 			URL:       img.URL,
@@ -393,16 +406,9 @@ func (s *ComicService) saveComicImages(comicID int, images []model.ImageInfo) {
 		return
 	}
 
-	// 更新 cache_states L3
-	cs := &model.CacheState{
-		ComicID:  comicID,
-		L3Cached: true,
-		L3Total:  len(images),
-		L3Current: len(images),
-		L3Progress: 100.0,
-	}
-	if err := s.repo.UpsertCacheState(cs); err != nil {
-		logger.Warn("更新 cache_state L3 失败", zap.Int("comic_id", comicID), zap.Error(err))
+	// 更新 cache_states L2（图片URL列表已缓存，非文件下载）
+	if err := s.repo.UpsertCacheStateL2(comicID); err != nil {
+		logger.Warn("更新 cache_state L2 失败", zap.Int("comic_id", comicID), zap.Error(err))
 	}
 }
 
@@ -417,10 +423,10 @@ func (s *ComicService) SearchLocal(keyword string, page int, pageSize int) (*mod
 	items := make([]model.ComicListItem, len(comics))
 	for i, comic := range comics {
 		items[i] = model.ComicListItem{
-			ID:        comic.ID,
+			ID:          comic.ID,
 			Title:       comic.Title,
-			Author:    comic.Author,
-		AuthorID:    comic.AuthorID,
+			Author:      comic.Author,
+			AuthorID:    comic.AuthorID,
 			CoverURL:    comic.CoverURL,
 			CoverBase64: comic.CoverBase64,
 			Rating:      comic.Rating,

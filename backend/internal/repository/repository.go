@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"syscall"
 	"time"
 
@@ -15,7 +16,8 @@ import (
 
 // Repository 数据仓库
 type Repository struct {
-	db *gorm.DB
+	db     *gorm.DB
+	dbPath string
 }
 
 // New 创建新的数据仓库
@@ -51,7 +53,7 @@ func New(dbPath string) (*Repository, error) {
 	sqlDB.SetMaxOpenConns(100)
 	sqlDB.SetConnMaxLifetime(time.Hour)
 
-	return &Repository{db: db}, nil
+	return &Repository{db: db, dbPath: dbPath}, nil
 }
 
 // preMigrate 预迁移：处理需要重建的表（在 AutoMigrate 之前运行）
@@ -105,6 +107,30 @@ func (r *Repository) Close() error {
 // GetDB 获取数据库实例
 func (r *Repository) GetDB() *gorm.DB {
 	return r.db
+}
+
+// GetDBPath 获取数据库文件路径
+func (r *Repository) GetDBPath() string {
+	return r.dbPath
+}
+
+// ResetCacheLevel 重置指定层级的缓存状态
+func (r *Repository) ResetCacheLevel(level string) {
+	switch level {
+	case "l1":
+		r.db.Model(&model.CacheState{}).Where("1=1").Update("l1_cached", false)
+	case "l2":
+		r.db.Model(&model.CacheState{}).Where("1=1").Update("l2_cached", false)
+	case "l3":
+		r.db.Model(&model.CacheState{}).Where("1=1").Updates(map[string]interface{}{
+			"l3_cached": false, "l3_progress": 0, "l3_total": 0, "l3_current": 0,
+		})
+	}
+}
+
+// ResetAllCacheLevels 重置所有缓存状态
+func (r *Repository) ResetAllCacheLevels() {
+	r.db.Where("1=1").Delete(&model.CacheState{})
 }
 
 // === Comic 相关 ===
@@ -450,12 +476,11 @@ func (r *Repository) ReleaseTaskLock(taskID int) error {
 }
 
 // RecoverStaleTasks 恢复停滞的任务（启动时调用）
+// 启动时所有 downloading/verifying 状态的任务都应重置为 queued（因为进程已重启，没有 worker 在处理）
 func (r *Repository) RecoverStaleTasks() (int64, error) {
 	now := time.Now()
-	staleTime := now.Add(-5 * time.Minute)
 	result := r.db.Model(&model.DownloadTask{}).
-		Where("status IN ? AND lock_acquired_at < ?",
-			[]string{"downloading", "verifying"}, staleTime).
+		Where("status IN ?", []string{"downloading", "verifying"}).
 		Updates(map[string]interface{}{
 			"status":           "queued",
 			"lock_token":       "",
@@ -495,7 +520,7 @@ func (r *Repository) GetPendingCoverTasks(limit int) ([]model.CoverCacheQueue, e
 // UpdateCoverTaskStatus 更新封面缓存任务状态
 func (r *Repository) UpdateCoverTaskStatus(comicID int, status string, retryCount int) error {
 	return r.db.Model(&model.CoverCacheQueue{}).
-	Where("comic_id = ?", comicID).
+		Where("comic_id = ?", comicID).
 		Updates(map[string]interface{}{
 			"status":      status,
 			"retry_count": retryCount,
@@ -534,8 +559,16 @@ func (r *Repository) GetDashboardStats() (*model.DashboardStats, error) {
 	var activeSources int64
 	var totalSources int64
 
-	// 总漫画数
-	r.db.Model(&model.Comic{}).Count(&totalComics)
+	// 总漫画数优先使用网站精确总数（最后一页不足额时也准确），
+	// 缺失时再回退到本地 comics 表数量。
+	if val, err := r.GetSystemMetadata("total_comics_count"); err == nil {
+		if tc, parseErr := strconv.ParseInt(val, 10, 64); parseErr == nil && tc > 0 {
+			totalComics = tc
+		}
+	}
+	if totalComics == 0 {
+		r.db.Model(&model.Comic{}).Count(&totalComics)
+	}
 	stats.TotalComics = int(totalComics)
 
 	// 已缓存漫画数（有封面缓存的）

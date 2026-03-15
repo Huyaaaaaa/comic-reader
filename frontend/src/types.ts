@@ -32,6 +32,18 @@ export interface ComicTag {
   tag_name: string;
 }
 
+export interface ComicCategory {
+  category_id: number;
+  category_name: string;
+  comic_count?: number;
+}
+
+export interface TagWithCount {
+  tag_id: number;
+  tag_name: string;
+  comic_count: number;
+}
+
 export interface ComicDetail {
   id: number;
   title: string;
@@ -70,6 +82,15 @@ export interface DashboardStats {
   history_count: number;
   downloading_count: number;
   pending_downloads: number;
+  completed_downloads?: number;
+  failed_downloads?: number;
+  l1_cached_count?: number;
+  l2_cached_count?: number;
+  l3_cached_count?: number;
+  active_sources?: number;
+  total_sources?: number;
+  disk_used_mb?: number;
+  disk_avail_mb?: number;
 }
 
 // ===== 前端内部类型 =====
@@ -87,8 +108,8 @@ export interface Manga {
   description: string;
   cached: boolean;
   favorited: boolean;
-  chapters: Chapter[];
-  cacheLevel: {
+  chapters?: Chapter[];
+  cacheLevel?: {
     metadata: boolean;
     cover: boolean;
     content: boolean;
