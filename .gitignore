@@ -50,3 +50,6 @@ pnpm-debug.log*
 build/
 tmp/
 backend/comic-server
+
+# Local docs
+docs/
