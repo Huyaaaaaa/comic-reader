@@ -59,3 +59,22 @@ func (r *Repository) GetCategories() ([]CategoryBrief, error) {
 		Find(&categories).Error
 	return categories, err
 }
+
+// TagBrief 标签摘要
+type TagBrief struct {
+	TagID      int    `json:"id"`
+	TagName    string `json:"name"`
+	ComicCount int    `json:"comic_count"`
+}
+
+// GetTagsWithCount 获取标签列表（带作品数）
+func (r *Repository) GetTagsWithCount() ([]TagBrief, error) {
+	var tags []TagBrief
+	err := r.db.Model(&model.ComicTag{}).
+		Select("tags.id, tags.name, COUNT(DISTINCT comic_tags.comic_id) as comic_count").
+		Joins("JOIN tags ON tags.id = comic_tags.tag_id").
+		Group("tags.id, tags.name").
+		Order("comic_count DESC").
+		Find(&tags).Error
+	return tags, err
+}

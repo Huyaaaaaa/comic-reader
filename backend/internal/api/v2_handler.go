@@ -10,12 +10,24 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
+// StrategyReloader 缓存策略重载接口
+type StrategyReloader interface {
+	ReloadConfig()
+}
+
+// SettingsInvalidator 设置缓存失效接口
+type SettingsInvalidator interface {
+	InvalidateProxySettingsCache()
+}
+
 // V2Handler v2 API 处理器
 type V2Handler struct {
-	searchService   *service.SearchService
-	settingsService *service.SettingsService
-	comicService    *service.ComicService
-	repo            *repository.Repository
+	searchService    *service.SearchService
+	settingsService  *service.SettingsService
+	comicService     *service.ComicService
+	repo             *repository.Repository
+	strategyReloader StrategyReloader
+	settingsHooks    []SettingsInvalidator
 }
 
 // NewV2Handler 创建 V2Handler
@@ -31,6 +43,19 @@ func NewV2Handler(
 		comicService:    comicService,
 		repo:            repo,
 	}
+}
+
+// SetStrategyReloader 注入缓存策略重载器
+func (h *V2Handler) SetStrategyReloader(r StrategyReloader) {
+	h.strategyReloader = r
+}
+
+// AddSettingsInvalidator 注入设置缓存失效器
+func (h *V2Handler) AddSettingsInvalidator(invalidator SettingsInvalidator) {
+	if invalidator == nil {
+		return
+	}
+	h.settingsHooks = append(h.settingsHooks, invalidator)
 }
 
 // Search 搜索+记录历史
@@ -127,6 +152,14 @@ func (h *V2Handler) UpdateSettings(c *gin.Context) {
 	if err := h.settingsService.SetBatchSettings(1, req.Settings); err != nil {
 		Error(c, http.StatusInternalServerError, CodeInternal, err.Error())
 		return
+	}
+
+	// 通知缓存策略调度器重新加载配置并立即执行
+	if h.strategyReloader != nil {
+		go h.strategyReloader.ReloadConfig()
+	}
+	for _, hook := range h.settingsHooks {
+		hook.InvalidateProxySettingsCache()
 	}
 
 	Success(c, nil)

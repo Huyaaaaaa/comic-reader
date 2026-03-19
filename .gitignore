@@ -49,3 +49,4 @@ pnpm-debug.log*
 # Build
 build/
 tmp/
+backend/comic-server

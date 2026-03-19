@@ -1,9 +1,44 @@
-import { useManga } from '../contexts/MangaContext';
+import { useState, useEffect } from 'react';
 import { MangaCard } from '../components/MangaCard';
+import { Loader2 } from 'lucide-react';
+import { Manga } from '../types';
+import client from '../api/client';
 
 export function CachedPage() {
-  const { mangas } = useManga();
-  const cachedMangas = mangas.filter((manga) => manga.cached);
+  const [cachedMangas, setCachedMangas] = useState<Manga[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    client.get('/v2/offline/comics').then(({ data }) => {
+      const items = data.data?.items || [];
+      const converted = items.map((item: any) => ({
+        id: String(item.comic_id),
+        title: item.title || `漫画 #${item.comic_id}`,
+        author: item.author ? [item.author] : [],
+        coverUrl: item.cover_url || '',
+        tags: [],
+        rating: item.rating || 0,
+        ratingCount: item.rating_count || 0,
+        favorites: item.favorites || 0,
+        categoryName: '',
+        description: '',
+        cached: true,
+        favorited: false,
+      }));
+      setCachedMangas(converted);
+      setLoading(false);
+    }).catch(() => {
+      setLoading(false);
+    });
+  }, []);
+
+  if (loading) {
+    return (
+      <div className="p-8 flex items-center justify-center py-16">
+        <Loader2 className="animate-spin text-blue-500" size={32} />
+      </div>
+    );
+  }
 
   return (
     <div className="p-8">

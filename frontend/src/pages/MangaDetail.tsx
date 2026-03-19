@@ -1,47 +1,115 @@
-import { useState, useEffect } from 'react';
+import axios from 'axios';
+import { useState, useEffect, useCallback } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { useManga } from '../contexts/MangaContext';
 import { Heart, Download, BookOpen, HardDrive, Loader2 } from 'lucide-react';
-import { Manga, ComicImage, comicDetailToManga } from '../types';
+import { Manga, ComicImage, ComicDetail, ComicCacheState, comicDetailToManga } from '../types';
 import * as api from '../api';
+
+const ACTIVE_DOWNLOAD_STATUSES = new Set(['queued', 'downloading', 'verifying', 'paused']);
 
 export function MangaDetail() {
   const { id } = useParams();
-  const { mangas, toggleFavorite, toggleCache } = useManga();
+  const { toggleFavorite, toggleCache, addToHistory } = useManga();
 
   const [manga, setManga] = useState<Manga | null>(null);
+  const [detail, setDetail] = useState<ComicDetail | null>(null);
   const [images, setImages] = useState<ComicImage[]>([]);
   const [sameAuthorMangas, setSameAuthorMangas] = useState<Manga[]>([]);
   const [loading, setLoading] = useState(true);
+  const [cacheState, setCacheState] = useState<ComicCacheState | null>(null);
+  const [downloadStatus, setDownloadStatus] = useState<'none' | 'downloading' | 'completed'>('none');
 
-  // 先从列表缓存中尝试找到
-  const cachedManga = mangas.find((m) => m.id === id);
+  const refreshCacheAndDownloadState = useCallback(async (comicId: number) => {
+    let nextCacheState: ComicCacheState | null = null;
+    try {
+      nextCacheState = await api.fetchComicCacheState(comicId);
+      setCacheState(nextCacheState);
+      if (nextCacheState.l3_cached) {
+        setDownloadStatus('completed');
+        setManga((current) => (current ? { ...current, cached: true } : current));
+        return;
+      }
+    } catch (error) {
+      if (!axios.isAxiosError(error) || error.response?.status !== 404) {
+        console.error('获取缓存状态失败:', error);
+      }
+      setCacheState(null);
+    }
+
+    try {
+      const tasks = await api.getDownloadTasks('active');
+      const activeTask = tasks.find(
+        (task) => task.comic_id === comicId && ACTIVE_DOWNLOAD_STATUSES.has(task.status)
+      );
+      setDownloadStatus(activeTask ? 'downloading' : 'none');
+      setManga((current) =>
+        current ? { ...current, cached: Boolean(nextCacheState?.l3_cached) } : current
+      );
+    } catch (error) {
+      console.error('获取下载任务失败:', error);
+    }
+  }, []);
 
   useEffect(() => {
     if (!id) return;
     setLoading(true);
+    setCacheState(null);
+    setDownloadStatus('none');
 
     const numericId = Number(id);
     Promise.all([
       api.fetchComicDetail(numericId).catch(() => null),
       api.fetchComicImages(numericId).catch(() => ({ images: [] })),
-    ]).then(([detail, imgRes]) => {
-      if (detail) {
-        const converted = comicDetailToManga(detail);
+    ]).then(async ([detailData, imgRes]) => {
+      if (detailData) {
+        setDetail(detailData);
+        const converted = comicDetailToManga(detailData);
         setManga(converted);
-        // 查找同作者作品（从当前列表中）
-        const authorNames = converted.author;
-        const related = mangas.filter(
-          (m) => m.id !== id && m.author.some((a) => authorNames.includes(a))
-        );
-        setSameAuthorMangas(related);
-      } else if (cachedManga) {
-        setManga(cachedManga);
+        addToHistory(id, converted.title, converted.coverUrl);
+
+        // 从后端获取同作者作品
+        if (converted.author.length > 0) {
+          try {
+            const res = await api.filterComics({ author: converted.author[0] });
+            const related = (res.items ?? [])
+              .map((item: any) => ({
+                id: String(item.id),
+                title: item.title,
+                author: item.author ? [item.author] : [],
+                coverUrl: item.cover_url,
+                tags: [],
+                rating: item.rating || 0,
+                ratingCount: item.rating_count || 0,
+                favorites: item.favorites || 0,
+                categoryName: '',
+                description: '',
+                cached: item.is_cached || false,
+                favorited: false,
+              }))
+              .filter((m: Manga) => m.id !== id);
+            setSameAuthorMangas(related);
+          } catch {}
+        }
       }
       setImages(imgRes.images ?? []);
       setLoading(false);
+      refreshCacheAndDownloadState(numericId).catch(() => {});
     });
-  }, [id]);
+  }, [id, addToHistory, refreshCacheAndDownloadState]);
+
+  useEffect(() => {
+    if (!id || downloadStatus !== 'downloading') {
+      return;
+    }
+
+    const numericId = Number(id);
+    const timer = window.setInterval(() => {
+      refreshCacheAndDownloadState(numericId).catch(() => {});
+    }, 2000);
+
+    return () => window.clearInterval(timer);
+  }, [id, downloadStatus, refreshCacheAndDownloadState]);
 
   if (loading) {
     return (
@@ -51,7 +119,7 @@ export function MangaDetail() {
     );
   }
 
-  const display = manga ?? cachedManga;
+  const display = manga;
   if (!display) {
     return (
       <div className="p-8 text-center py-16">
@@ -60,7 +128,8 @@ export function MangaDetail() {
     );
   }
 
-  const previewImages = images.slice(0, 10);
+  const previewImages = images.slice(0, 5);
+  const isCached = Boolean(cacheState?.l3_cached || manga?.cached || downloadStatus === 'completed');
 
   return (
     <div className="p-8">
@@ -78,20 +147,20 @@ export function MangaDetail() {
                 <span className="text-gray-500 dark:text-gray-400">作者：</span>
                 <div className="flex flex-wrap gap-2">
                   {display.author.map((author) => (
-                    <Link key={author} to={`/author/${encodeURIComponent(author)}`} className="text-blue-500 hover:text-blue-600 hover:underline">
+                    <Link key={author} to={`/all?author=${encodeURIComponent(author)}`} className="text-blue-500 hover:text-blue-600 hover:underline">
                       {author}
                     </Link>
                   ))}
                 </div>
               </div>
 
-              {display.tags.length > 0 && (
+              {detail && detail.tags && detail.tags.length > 0 && (
                 <div className="flex items-center gap-2">
                   <span className="text-gray-500 dark:text-gray-400">标签：</span>
                   <div className="flex flex-wrap gap-2">
-                    {display.tags.map((tag) => (
-                      <Link key={tag} to={`/tags?tags=${encodeURIComponent(tag)}`} className="px-3 py-1 bg-blue-100 dark:bg-blue-900 text-blue-800 dark:text-blue-200 rounded-full text-sm hover:bg-blue-200 dark:hover:bg-blue-800 transition-colors">
-                        {tag}
+                    {detail.tags.map((tag) => (
+                      <Link key={tag.tag_id} to={`/all?tag_id=${tag.tag_id}`} className="px-3 py-1 bg-blue-100 dark:bg-blue-900 text-blue-800 dark:text-blue-200 rounded-full text-sm hover:bg-blue-200 dark:hover:bg-blue-800 transition-colors">
+                        {tag.tag_name}
                       </Link>
                     ))}
                   </div>
@@ -108,8 +177,10 @@ export function MangaDetail() {
 
               <div className="flex items-center gap-2">
                 <span className="text-gray-500 dark:text-gray-400">状态：</span>
-                {display.cached ? (
+                {isCached ? (
                   <><HardDrive size={16} className="text-green-500" /><span className="text-green-600 dark:text-green-400">已缓存</span></>
+                ) : downloadStatus === 'downloading' ? (
+                  <><Loader2 size={16} className="animate-spin text-yellow-500" /><span className="text-yellow-600 dark:text-yellow-400">正在缓存</span></>
                 ) : (
                   <span className="text-gray-600 dark:text-gray-400">未缓存</span>
                 )}
@@ -125,17 +196,47 @@ export function MangaDetail() {
                 <BookOpen size={20} /><span>开始阅读</span>
               </Link>
               <button
-                onClick={() => toggleFavorite(display.id)}
-                className={`flex items-center gap-2 px-6 py-3 rounded-lg transition-colors ${display.favorited ? 'bg-red-500 text-white hover:bg-red-600' : 'bg-gray-200 dark:bg-gray-700 text-gray-900 dark:text-white hover:bg-gray-300 dark:hover:bg-gray-600'}`}
+                onClick={async () => {
+                  const result = await toggleFavorite(display.id, display.title, display.coverUrl);
+                  if (result !== undefined && manga) {
+                    setManga({ ...manga, favorited: result });
+                  }
+                }}
+                className={`flex items-center gap-2 px-6 py-3 rounded-lg transition-colors ${manga?.favorited ? 'bg-red-500 text-white hover:bg-red-600' : 'bg-gray-200 dark:bg-gray-700 text-gray-900 dark:text-white hover:bg-gray-300 dark:hover:bg-gray-600'}`}
               >
-                <Heart size={20} fill={display.favorited ? 'currentColor' : 'none'} />
-                <span>{display.favorited ? '已收藏' : '收藏'}</span>
+                <Heart size={20} fill={manga?.favorited ? 'currentColor' : 'none'} />
+                <span>{manga?.favorited ? '已收藏' : '收藏'}</span>
               </button>
               <button
-                onClick={() => toggleCache(display.id)}
-                className={`flex items-center gap-2 px-6 py-3 rounded-lg transition-colors ${display.cached ? 'bg-green-500 text-white hover:bg-green-600' : 'bg-gray-200 dark:bg-gray-700 text-gray-900 dark:text-white hover:bg-gray-300 dark:hover:bg-gray-600'}`}
+                onClick={async () => {
+                  if (downloadStatus === 'downloading' || isCached) return;
+                  setDownloadStatus('downloading');
+                  try {
+                    await toggleCache(display.id, display.title, display.coverUrl);
+                    await refreshCacheAndDownloadState(Number(display.id));
+                  } catch (error) {
+                    if (axios.isAxiosError(error) && error.response?.status === 409) {
+                      await refreshCacheAndDownloadState(Number(display.id));
+                      setDownloadStatus('downloading');
+                      return;
+                    }
+                    setDownloadStatus('none');
+                  }
+                }}
+                disabled={downloadStatus === 'downloading'}
+                className={`flex items-center gap-2 px-6 py-3 rounded-lg transition-colors ${
+                  isCached
+                    ? 'bg-green-500 text-white hover:bg-green-600'
+                    : downloadStatus === 'downloading'
+                    ? 'bg-yellow-500 text-white cursor-wait'
+                    : 'bg-gray-200 dark:bg-gray-700 text-gray-900 dark:text-white hover:bg-gray-300 dark:hover:bg-gray-600'
+                }`}
               >
-                <Download size={20} /><span>{display.cached ? '已下载' : '下载'}</span>
+                {downloadStatus === 'downloading' ? (
+                  <><Loader2 size={20} className="animate-spin" /><span>缓存中...</span></>
+                ) : (
+                  <><Download size={20} /><span>{isCached ? '已缓存' : '下载'}</span></>
+                )}
               </button>
             </div>
           </div>

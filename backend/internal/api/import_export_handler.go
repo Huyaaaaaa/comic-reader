@@ -42,6 +42,34 @@ func (h *ImportExportHandler) CreateExport(c *gin.Context) {
 	})
 }
 
+// UploadImport 上传导入包到服务端临时目录
+// POST /api/v2/import/upload
+func (h *ImportExportHandler) UploadImport(c *gin.Context) {
+	fileHeader, err := c.FormFile("file")
+	if err != nil {
+		Error(c, http.StatusBadRequest, CodeBadRequest, "缺少导入文件")
+		return
+	}
+
+	src, err := fileHeader.Open()
+	if err != nil {
+		Error(c, http.StatusInternalServerError, CodeInternal, "打开上传文件失败")
+		return
+	}
+	defer src.Close()
+
+	filePath, err := h.ieService.SaveImportUpload(src, fileHeader.Filename)
+	if err != nil {
+		Error(c, http.StatusInternalServerError, CodeInternal, err.Error())
+		return
+	}
+
+	Success(c, gin.H{
+		"file_path": filePath,
+		"filename":  fileHeader.Filename,
+	})
+}
+
 // GetExportStatus 查询导出任务状态
 // GET /api/v2/export/:id
 func (h *ImportExportHandler) GetExportStatus(c *gin.Context) {

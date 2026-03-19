@@ -178,25 +178,30 @@ func (h *ComicHandler) GetDashboardStats(c *gin.Context) {
 	c.JSON(http.StatusOK, stats)
 }
 
-// Filter 筛选漫画（按作者/标签从网站获取）
-// GET /api/comics/filter?tag_id=1&author_id=1&page=1
+// Filter 筛选漫画（按作者/标签/分类从网站获取）
+// GET /api/comics/filter?tag_id=1&category_id=1&author_id=1&author=xxx&page=1
 func (h *ComicHandler) Filter(c *gin.Context) {
 	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
 	if page < 1 {
 		page = 1
 	}
 
-	var tagID, authorID *int
+	var tagID, categoryID, authorID *int
+	author := c.Query("author")
 	if v := c.Query("tag_id"); v != "" {
 		id, _ := strconv.Atoi(v)
 		tagID = &id
+	}
+	if v := c.Query("category_id"); v != "" {
+		id, _ := strconv.Atoi(v)
+		categoryID = &id
 	}
 	if v := c.Query("author_id"); v != "" {
 		id, _ := strconv.Atoi(v)
 		authorID = &id
 	}
 
-	resp, err := h.comicService.GetFilteredList(page, tagID, authorID)
+	resp, err := h.comicService.GetFilteredList(page, tagID, categoryID, authorID, author)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return

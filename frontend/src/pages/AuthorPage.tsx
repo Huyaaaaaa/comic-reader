@@ -1,6 +1,5 @@
 import { useState, useEffect } from 'react';
 import { useParams } from 'react-router-dom';
-import { useManga } from '../contexts/MangaContext';
 import { MangaCard } from '../components/MangaCard';
 import { User, Loader2 } from 'lucide-react';
 import { Manga, comicListItemToManga } from '../types';
@@ -8,24 +7,17 @@ import { filterComics } from '../api';
 
 export function AuthorPage() {
   const { name } = useParams();
-  const { mangas } = useManga();
   const [authorMangas, setAuthorMangas] = useState<Manga[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     if (!name) return;
-    // 先从本地列表匹配
-    const local = mangas.filter((m) => m.author.includes(name));
-    setAuthorMangas(local);
+    setLoading(true);
 
-    // 再请求后端筛选
     filterComics({ author: name })
       .then((res) => {
-        const remote = (res.items ?? []).map(comicListItemToManga);
-        if (remote.length > 0) {
-          const ids = new Set(local.map((m) => m.id));
-          setAuthorMangas([...local, ...remote.filter((m) => !ids.has(m.id))]);
-        }
+        const converted = (res.items ?? []).map(comicListItemToManga);
+        setAuthorMangas(converted);
       })
       .catch(() => {})
       .finally(() => setLoading(false));

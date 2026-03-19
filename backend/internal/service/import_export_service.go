@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"mime/multipart"
 	"os"
 	"path/filepath"
 	"strings"
@@ -27,18 +28,45 @@ type ImportExportService struct {
 	repo      *repository.Repository
 	dlCfg     *config.DownloadConfig
 	exportDir string
+	importDir string
 }
 
 // NewImportExportService 创建导入导出服务
 func NewImportExportService(repo *repository.Repository, dlCfg *config.DownloadConfig) *ImportExportService {
 	exportDir := filepath.Join(dlCfg.Dir, "exports")
 	os.MkdirAll(exportDir, 0755)
+	importDir := filepath.Join(exportDir, "imports")
+	os.MkdirAll(importDir, 0755)
 
 	return &ImportExportService{
 		repo:      repo,
 		dlCfg:     dlCfg,
 		exportDir: exportDir,
+		importDir: importDir,
 	}
+}
+
+// SaveImportUpload 保存前端上传的导入包，返回服务端文件路径
+func (s *ImportExportService) SaveImportUpload(file multipart.File, filename string) (string, error) {
+	safeName := filepath.Base(filename)
+	if safeName == "." || safeName == string(filepath.Separator) || safeName == "" {
+		safeName = "import.cpack"
+	}
+
+	targetName := fmt.Sprintf("%d_%s", time.Now().UnixNano(), safeName)
+	targetPath := filepath.Join(s.importDir, targetName)
+
+	dst, err := os.Create(targetPath)
+	if err != nil {
+		return "", fmt.Errorf("创建上传文件失败: %w", err)
+	}
+	defer dst.Close()
+
+	if _, err := io.Copy(dst, file); err != nil {
+		return "", fmt.Errorf("保存上传文件失败: %w", err)
+	}
+
+	return targetPath, nil
 }
 
 // CreateExport 创建导出任务
@@ -194,6 +222,12 @@ func (s *ImportExportService) resolveComicIDs(scope string, comicIDs []int) ([]i
 	case "all_covers":
 		return s.repo.GetAllCachedComicIDs()
 	case "all_images":
+		return s.repo.GetAllCachedComicIDs()
+	case "all_cached":
+		return s.repo.GetAllCachedComicIDs()
+	case "covers":
+		return s.repo.GetAllCachedComicIDs()
+	case "images":
 		return s.repo.GetAllCachedComicIDs()
 	default:
 		return nil, fmt.Errorf("未知 scope: %s", scope)

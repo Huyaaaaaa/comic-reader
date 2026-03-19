@@ -378,8 +378,8 @@ func (s *ComicService) GetReaderImages(comicID int) ([]model.ImageInfo, error) {
 		}
 	}
 
-	// 保存到数据库
-	go s.saveComicImages(comicID, images2)
+	// 保存到数据库。这里需要同步落库，避免阅读页刚返回后立即创建下载任务时读不到图片列表。
+	s.saveComicImages(comicID, images2)
 
 	return images2, nil
 }

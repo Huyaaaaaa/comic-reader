@@ -42,6 +42,23 @@ func (h *SourceHandler) AddSource(c *gin.Context) {
 	Success(c, s)
 }
 
+// ImportReleasePageSources POST /api/v2/sources/import-release — 从发布页导入源站
+func (h *SourceHandler) ImportReleasePageSources(c *gin.Context) {
+	var req model.ImportReleasePageSourcesRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		Error(c, http.StatusBadRequest, CodeBadRequest, "参数错误: "+err.Error())
+		return
+	}
+
+	result, err := h.sourceManager.ImportFromReleasePage(req.ReleasePageURL)
+	if err != nil {
+		Error(c, http.StatusInternalServerError, CodeInternal, "导入发布页源站失败: "+err.Error())
+		return
+	}
+
+	Success(c, result)
+}
+
 // DeleteSource DELETE /api/v2/sources/:id — 删除源站
 func (h *SourceHandler) DeleteSource(c *gin.Context) {
 	id, err := strconv.Atoi(c.Param("id"))
@@ -79,18 +96,23 @@ func (h *SourceHandler) CheckSourceHealth(c *gin.Context) {
 		return
 	}
 
-	latency, checkErr := h.sourceManager.CheckHealth(target)
-	resp := model.SourceHealthResponse{
-		ID:      target.ID,
-		URL:     target.URL,
-		Latency: latency,
+	resp, checkErr := h.sourceManager.CheckHealth(target)
+	if resp == nil {
+		resp = &model.SourceHealthResponse{
+			ID:     target.ID,
+			URL:    target.URL,
+			Status: "inactive",
+		}
 	}
 	if checkErr != nil {
-		resp.Status = "failed"
 		resp.Error = checkErr.Error()
-	} else {
-		resp.Status = "active"
 	}
 
 	Success(c, resp)
+}
+
+// CheckProxyHealth GET /api/v2/sources/proxy/check — 检测代理可用性
+func (h *SourceHandler) CheckProxyHealth(c *gin.Context) {
+	force := c.DefaultQuery("force", "false") == "true"
+	Success(c, h.sourceManager.GetProxyHealth(force))
 }

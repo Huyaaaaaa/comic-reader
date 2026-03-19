@@ -1,9 +1,44 @@
-import { useManga } from '../contexts/MangaContext';
+import { useState, useEffect } from 'react';
 import { MangaCard } from '../components/MangaCard';
+import { Loader2 } from 'lucide-react';
+import { Manga } from '../types';
+import client from '../api/client';
 
 export function FavoritesPage() {
-  const { mangas } = useManga();
-  const favoriteMangas = mangas.filter((manga) => manga.favorited);
+  const [favoriteMangas, setFavoriteMangas] = useState<Manga[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    client.get('/favorites').then(({ data }) => {
+      const items = data.items || [];
+      const converted = items.map((item: any) => ({
+        id: String(item.comic_id || item.id),
+        title: item.title || '',
+        author: item.author ? [item.author] : [],
+        coverUrl: item.cover_url || '',
+        tags: [],
+        rating: item.rating || 0,
+        ratingCount: item.rating_count || 0,
+        favorites: item.favorites || 0,
+        categoryName: '',
+        description: '',
+        cached: false,
+        favorited: true,
+      }));
+      setFavoriteMangas(converted);
+      setLoading(false);
+    }).catch(() => {
+      setLoading(false);
+    });
+  }, []);
+
+  if (loading) {
+    return (
+      <div className="p-8 flex items-center justify-center py-16">
+        <Loader2 className="animate-spin text-blue-500" size={32} />
+      </div>
+    );
+  }
 
   return (
     <div className="p-8">

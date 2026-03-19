@@ -6,26 +6,26 @@ import (
 
 // Comic 漫画主表
 type Comic struct {
-	ID              int       `gorm:"primaryKey" json:"id"`
-	Title           string    `gorm:"type:text" json:"title"`
-	Subtitle   string    `gorm:"type:text" json:"subtitle"`
-	Author          string    `gorm:"type:text" json:"author"`
-	AuthorID        int       `json:"author_id"`
-	CoverURL        string    `gorm:"type:text" json:"cover_url"`
-	CoverBase64     string    `gorm:"type:text" json:"cover_base64,omitempty"`
-	Rating          float64   `json:"rating"`
-	RatingCount     int       `json:"rating_count"`
-	Favorites       int    `json:"favorites"`
-	CategoryID      int       `json:"category_id"`
-	CategoryName    string    `json:"category_name"`
-	Description     string    `gorm:"type:text" json:"description"`
-	PageCount       int       `json:"page_count"`
-	Status          string    `gorm:"type:text;default:unknown" json:"status"` // ongoing/completed/unknown
-	CreatedAt       time.Time `json:"created_at"`
-	UpdatedAt       time.Time `json:"updated_at"`
-	HasCoverCached  bool      `json:"has_cover_cached"`
-	CoverCachedAt   *time.Time `json:"cover_cached_at,omitempty"`
-	CoverSize       int       `json:"cover_size"`
+	ID             int        `gorm:"primaryKey" json:"id"`
+	Title          string     `gorm:"type:text" json:"title"`
+	Subtitle       string     `gorm:"type:text" json:"subtitle"`
+	Author         string     `gorm:"type:text" json:"author"`
+	AuthorID       int        `json:"author_id"`
+	CoverURL       string     `gorm:"type:text" json:"cover_url"`
+	CoverBase64    string     `gorm:"type:text" json:"cover_base64,omitempty"`
+	Rating         float64    `json:"rating"`
+	RatingCount    int        `json:"rating_count"`
+	Favorites      int        `json:"favorites"`
+	CategoryID     int        `json:"category_id"`
+	CategoryName   string     `json:"category_name"`
+	Description    string     `gorm:"type:text" json:"description"`
+	PageCount      int        `json:"page_count"`
+	Status         string     `gorm:"type:text;default:unknown" json:"status"` // ongoing/completed/unknown
+	CreatedAt      time.Time  `json:"created_at"`
+	UpdatedAt      time.Time  `json:"updated_at"`
+	HasCoverCached bool       `json:"has_cover_cached"`
+	CoverCachedAt  *time.Time `json:"cover_cached_at,omitempty"`
+	CoverSize      int        `json:"cover_size"`
 }
 
 // ComicImage 漫画图片
@@ -61,19 +61,19 @@ type ComicAuthor struct {
 // ComicMetadataState 漫画元数据状态
 type ComicMetadataState struct {
 	ComicID            int        `gorm:"primaryKey" json:"comic_id"`
-	ListCached           bool       `json:"list_cached"`
+	ListCached         bool       `json:"list_cached"`
 	DetailCached       bool       `json:"detail_cached"`
-	AuthorReady          bool       `json:"author_ready"`
-	TagsReady            bool       `json:"tags_ready"`
-	LastListCachedAt     *time.Time `json:"last_list_cached_at,omitempty"`
-	LastDetailCachedAt   *time.Time `json:"last_detail_cached_at,omitempty"`
-	UpdatedAt            time.Time  `json:"updated_at"`
+	AuthorReady        bool       `json:"author_ready"`
+	TagsReady          bool       `json:"tags_ready"`
+	LastListCachedAt   *time.Time `json:"last_list_cached_at,omitempty"`
+	LastDetailCachedAt *time.Time `json:"last_detail_cached_at,omitempty"`
+	UpdatedAt          time.Time  `json:"updated_at"`
 }
 
 // ReadingHistory 阅读历史
 type ReadingHistory struct {
 	ComicID    int       `gorm:"primaryKey" json:"comic_id"`
-	Title    string    `gorm:"type:text" json:"title"`
+	Title      string    `gorm:"type:text" json:"title"`
 	CoverURL   string    `gorm:"type:text" json:"cover_url"`
 	PageNumber int       `json:"page_number"`
 	Progress   float64   `json:"progress"`
@@ -94,7 +94,7 @@ type ComicListCache struct {
 	ComicID     int       `gorm:"primaryKey" json:"comic_id"`
 	Page        int       `gorm:"primaryKey" json:"page"`
 	Position    int       `json:"position"`
-	Title    string    `gorm:"type:text" json:"title"`
+	Title       string    `gorm:"type:text" json:"title"`
 	Author      string    `gorm:"type:text" json:"author"`
 	AuthorID    int       `json:"author_id"`
 	CoverURL    string    `gorm:"type:text" json:"cover_url"`
@@ -146,11 +146,11 @@ type SystemMetadata struct {
 
 // SearchHistory 搜索历史
 type SearchHistory struct {
-	ID         int       `gorm:"primaryKey;autoIncrement" json:"id"`
-	UserID     int       `gorm:"default:1" json:"user_id"`
-	Keyword    string    `gorm:"type:text;not null" json:"keyword"`
-	ResultCount int      `json:"result_count"`
-	SearchedAt time.Time `json:"searched_at"`
+	ID          int       `gorm:"primaryKey;autoIncrement" json:"id"`
+	UserID      int       `gorm:"default:1" json:"user_id"`
+	Keyword     string    `gorm:"type:text;not null" json:"keyword"`
+	ResultCount int       `json:"result_count"`
+	SearchedAt  time.Time `json:"searched_at"`
 }
 
 // UserSetting 用户设置
@@ -186,24 +186,30 @@ type ReadingProgress struct {
 
 // SourceSite 源站
 type SourceSite struct {
-	ID        int        `gorm:"primaryKey;autoIncrement" json:"id"`
-	URL       string     `gorm:"type:text;not null" json:"url"`
-	Name      string     `gorm:"type:text" json:"name"`
-	ImageCDN  string     `gorm:"type:text" json:"image_cdn"`
-	Priority  int        `json:"priority"`
-	Status    string     `gorm:"type:text;default:active" json:"status"` // active/inactive/failed
-	FailCount int        `gorm:"default:0" json:"fail_count"`
-	Latency   int        `json:"latency"`
-	LastCheck *time.Time `json:"last_check,omitempty"`
-	CreatedAt time.Time  `json:"created_at"`
+	ID              int        `gorm:"primaryKey;autoIncrement" json:"id"`
+	URL             string     `gorm:"type:text;not null" json:"url"`
+	Name            string     `gorm:"type:text" json:"name"`
+	ImageCDN        string     `gorm:"type:text" json:"image_cdn"`
+	Priority        int        `json:"priority"`
+	Status          string     `gorm:"type:text;default:unknown" json:"status"` // active/proxy/inactive/unknown
+	FailCount       int        `gorm:"default:0" json:"fail_count"`
+	Latency         int        `json:"latency"`
+	DirectStatus    string     `gorm:"type:text;default:unknown" json:"direct_status"`
+	DirectLatency   int        `json:"direct_latency"`
+	DirectLastError string     `gorm:"type:text" json:"direct_last_error"`
+	ProxyStatus     string     `gorm:"type:text;default:unknown" json:"proxy_status"`
+	ProxyLatency    int        `json:"proxy_latency"`
+	ProxyLastError  string     `gorm:"type:text" json:"proxy_last_error"`
+	LastCheck       *time.Time `json:"last_check,omitempty"`
+	CreatedAt       time.Time  `json:"created_at"`
 }
 
 // ImportExportJob 导入导出任务
 type ImportExportJob struct {
 	ID            int        `gorm:"primaryKey;autoIncrement" json:"id"`
-	Direction     string     `gorm:"type:text;not null" json:"direction"`                // import/export
-	Scope         string     `gorm:"type:text;not null" json:"scope"`                    // single_comic/selected_offline_ready/all_cached_comics/all_covers/all_images
-	Status        string     `gorm:"type:text;not null;default:queued" json:"status"`    // queued/running/completed/failed/canceled
+	Direction     string     `gorm:"type:text;not null" json:"direction"`             // import/export
+	Scope         string     `gorm:"type:text;not null" json:"scope"`                 // single_comic/selected_offline_ready/all_cached_comics/all_covers/all_images
+	Status        string     `gorm:"type:text;not null;default:queued" json:"status"` // queued/running/completed/failed/canceled
 	FilePath      string     `gorm:"type:text" json:"file_path"`
 	OptionsJSON   string     `gorm:"type:text;default:{}" json:"options_json"`
 	SummaryJSON   string     `gorm:"type:text;default:{}" json:"summary_json"`
@@ -232,10 +238,11 @@ func (UserSetting) TableName() string        { return "user_settings" }
 func (CacheState) TableName() string         { return "cache_states" }
 func (ReadingProgress) TableName() string    { return "reading_progress" }
 func (SourceSite) TableName() string         { return "source_sites" }
+
 // UpdateRecord 更新记录
 type UpdateRecord struct {
 	ID             int        `gorm:"primaryKey;autoIncrement" json:"id"`
-	UpdateType     string     `gorm:"type:text;not null" json:"update_type"`   // content/app
+	UpdateType     string     `gorm:"type:text;not null" json:"update_type"` // content/app
 	Channel        string     `gorm:"type:text" json:"channel"`
 	RemoteVersion  string     `gorm:"type:text" json:"remote_version"`
 	CurrentVersion string     `gorm:"type:text" json:"current_version"`
@@ -246,5 +253,5 @@ type UpdateRecord struct {
 	AppliedAt      *time.Time `json:"applied_at,omitempty"`
 }
 
-func (ImportExportJob) TableName() string    { return "import_export_jobs" }
-func (UpdateRecord) TableName() string       { return "update_records" }
+func (ImportExportJob) TableName() string { return "import_export_jobs" }
+func (UpdateRecord) TableName() string    { return "update_records" }

@@ -14,11 +14,13 @@ type Router struct {
 	sourceHandler   *SourceHandler
 	eventHandler    *EventHandler
 	imageHandler    *ImageHandler
+	readerHandler   *ReaderHandler
 	metaHandler     *MetaHandler
+	storageHandler  *StorageHandler
 }
 
 // NewRouter 创建路由器
-func NewRouter(comicHandler *ComicHandler, v2Handler *V2Handler, downloadHandler *DownloadHandler, ieHandler *ImportExportHandler, updateHandler *UpdateHandler, sourceHandler *SourceHandler, eventHandler *EventHandler, imageHandler *ImageHandler, metaHandler *MetaHandler) *Router {
+func NewRouter(comicHandler *ComicHandler, v2Handler *V2Handler, downloadHandler *DownloadHandler, ieHandler *ImportExportHandler, updateHandler *UpdateHandler, sourceHandler *SourceHandler, eventHandler *EventHandler, imageHandler *ImageHandler, readerHandler *ReaderHandler, metaHandler *MetaHandler, storageHandler *StorageHandler) *Router {
 	return &Router{
 		comicHandler:    comicHandler,
 		v2Handler:       v2Handler,
@@ -28,7 +30,9 @@ func NewRouter(comicHandler *ComicHandler, v2Handler *V2Handler, downloadHandler
 		sourceHandler:   sourceHandler,
 		eventHandler:    eventHandler,
 		imageHandler:    imageHandler,
+		readerHandler:   readerHandler,
 		metaHandler:     metaHandler,
+		storageHandler:  storageHandler,
 	}
 }
 
@@ -40,11 +44,11 @@ func (r *Router) Setup(engine *gin.Engine) {
 		// 漫画相关
 		comics := api.Group("/comics")
 		{
-			comics.GET("", r.comicHandler.GetList)           // 获取列表
-			comics.GET("/:id", r.comicHandler.GetDetail)     // 获取详情
-			comics.GET("/:id/images", r.comicHandler.GetReaderImages) // 获取图片列表
-			comics.GET("/search", r.comicHandler.Search)     // 搜索
-			comics.GET("/filter", r.comicHandler.Filter)     // 筛选
+			comics.GET("", r.comicHandler.GetList)                        // 获取列表
+			comics.GET("/:id", r.comicHandler.GetDetail)                  // 获取详情
+			comics.GET("/:id/images", r.comicHandler.GetReaderImages)     // 获取图片列表
+			comics.GET("/search", r.comicHandler.Search)                  // 搜索
+			comics.GET("/filter", r.comicHandler.Filter)                  // 筛选
 			comics.POST("/:id/history", r.comicHandler.AddReadingHistory) // 添加历史
 			comics.POST("/:id/favorite", r.comicHandler.ToggleFavorite)   // 切换收藏
 		}
@@ -86,6 +90,14 @@ func (r *Router) Setup(engine *gin.Engine) {
 			v2.GET("/offline/comics", r.v2Handler.GetOfflineComics)
 			v2.GET("/comics/:id/cache", r.v2Handler.GetComicCacheState)
 
+			reader := v2.Group("/reader")
+			{
+				reader.POST("/sessions", r.readerHandler.CreateSession)
+				reader.GET("/sessions/:id", r.readerHandler.GetSession)
+				reader.POST("/sessions/:id/focus", r.readerHandler.UpdateFocus)
+				reader.GET("/sessions/:id/images/:sort", r.readerHandler.ServeImage)
+			}
+
 			// 下载管理
 			downloads := v2.Group("/downloads")
 			{
@@ -109,6 +121,7 @@ func (r *Router) Setup(engine *gin.Engine) {
 			// 导入
 			importGroup := v2.Group("/import")
 			{
+				importGroup.POST("/upload", r.ieHandler.UploadImport)
 				importGroup.POST("/scan", r.ieHandler.ScanImport)
 				importGroup.POST("/execute", r.ieHandler.ExecuteImport)
 				importGroup.GET("/status/:id", r.ieHandler.GetImportStatus)
@@ -126,6 +139,8 @@ func (r *Router) Setup(engine *gin.Engine) {
 			{
 				sources.GET("", r.sourceHandler.GetSources)
 				sources.POST("", r.sourceHandler.AddSource)
+				sources.POST("/import-release", r.sourceHandler.ImportReleasePageSources)
+				sources.GET("/proxy/check", r.sourceHandler.CheckProxyHealth)
 				sources.DELETE("/:id", r.sourceHandler.DeleteSource)
 				sources.POST("/:id/check", r.sourceHandler.CheckSourceHealth)
 			}
@@ -140,6 +155,10 @@ func (r *Router) Setup(engine *gin.Engine) {
 			// 标签和分类
 			v2.GET("/tags", r.metaHandler.GetTags)
 			v2.GET("/categories", r.metaHandler.GetCategories)
+
+			// 存储管理
+			v2.GET("/storage/stats", r.storageHandler.GetStats)
+			v2.POST("/storage/clear", r.storageHandler.ClearStorage)
 		}
 	}
 }

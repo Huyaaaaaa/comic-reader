@@ -17,12 +17,12 @@ interface MangaContextType {
   fromCache: boolean;
   loading: boolean;
   error: string | null;
-  fetchPage: (page: number) => Promise<void>;
+  fetchPage: (page: number, pageSize?: number) => Promise<void>;
   searchMangas: (keyword: string, page?: number) => Promise<{ mangas: Manga[]; totalPages: number }>;
-  toggleFavorite: (id: string) => Promise<void>;
+  toggleFavorite: (id: string, title?: string, coverUrl?: string) => Promise<boolean | undefined>;
   history: string[];
-  addToHistory: (id: string) => void;
-  toggleCache: (id: string) => void;
+  addToHistory: (id: string, title?: string, coverUrl?: string) => void;
+  toggleCache: (id: string, title?: string, coverUrl?: string) => Promise<void>;
   downloads: DownloadItem[];
   stats: DashboardStats | null;
   fetchStats: () => Promise<void>;
@@ -54,11 +54,11 @@ export function MangaProvider({ children }: { children: ReactNode }) {
     api.healthCheck().then(setOnline);
   }, []);
 
-  const fetchPage = useCallback(async (page: number) => {
+  const fetchPage = useCallback(async (page: number, pageSize?: number) => {
     setLoading(true);
     setError(null);
     try {
-      const res = await api.fetchComics(page);
+      const res = await api.fetchComics(page, true, pageSize);
       const converted = (res.items ?? []).map(comicListItemToManga);
       setMangas(converted);
       setCurrentPage(res.current_page);
@@ -80,35 +80,55 @@ export function MangaProvider({ children }: { children: ReactNode }) {
     return { mangas: converted, totalPages: res.total_pages };
   }, []);
 
-  const toggleFavorite = useCallback(async (id: string) => {
+  const toggleFavorite = useCallback(async (id: string, title?: string, coverUrl?: string) => {
     const manga = mangas.find((m) => m.id === id);
-    if (!manga) return;
+    const finalTitle = title || manga?.title || '';
+    const finalCoverUrl = coverUrl || manga?.coverUrl || '';
+
     try {
-      const res = await api.toggleFavorite(Number(id), manga.title, manga.coverUrl);
+      const res = await api.toggleFavorite(Number(id), finalTitle, finalCoverUrl);
       setMangas((prev) =>
         prev.map((m) => (m.id === id ? { ...m, favorited: res.is_favorited } : m))
       );
-    } catch {
+      return res.is_favorited;
+    } catch (error) {
+      console.error('收藏失败:', error);
       setMangas((prev) =>
         prev.map((m) => (m.id === id ? { ...m, favorited: !m.favorited } : m))
       );
+      return undefined;
     }
   }, [mangas]);
 
-  const toggleCache = useCallback((id: string) => {
-    setMangas((prev) =>
-      prev.map((m) => (m.id === id ? { ...m, cached: !m.cached } : m))
-    );
-  }, []);
+  const toggleCache = useCallback(async (id: string, title?: string, coverUrl?: string) => {
+    const manga = mangas.find((m) => m.id === id);
 
-  const addToHistory = useCallback((id: string) => {
+    // 如果已缓存，不做处理（删除缓存功能暂未实现）
+    if (manga?.cached) {
+      return;
+    }
+
+    try {
+      // 调用后端下载 API
+      await api.createDownloadTask(Number(id), 'full');
+    } catch (error) {
+      console.error('创建下载任务失败:', error);
+      throw error;
+    }
+  }, [mangas]);
+
+  const addToHistory = useCallback((id: string, title?: string, coverUrl?: string) => {
     setHistory((prev) => {
       const filtered = prev.filter((item) => item !== id);
       return [id, ...filtered].slice(0, 50);
     });
+
     const manga = mangas.find((m) => m.id === id);
-    if (manga) {
-      api.addHistory(Number(id), manga.title, manga.coverUrl).catch(() => {});
+    const finalTitle = title || manga?.title || '';
+    const finalCoverUrl = coverUrl || manga?.coverUrl || '';
+
+    if (finalTitle && finalCoverUrl) {
+      api.addHistory(Number(id), finalTitle, finalCoverUrl).catch(() => {});
     }
   }, [mangas]);
 

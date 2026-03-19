@@ -7,6 +7,7 @@ import (
 	"comic-viewer-claude/pkg/config"
 	"comic-viewer-claude/pkg/logger"
 	"fmt"
+	"io"
 	"math/rand"
 	"os"
 	"path/filepath"
@@ -17,6 +18,16 @@ import (
 	"golang.org/x/sync/singleflight"
 )
 
+// EventBroadcaster SSE 事件广播接口
+type EventBroadcaster interface {
+	BroadcastEvent(eventType string, data interface{})
+}
+
+type TempImageProvider interface {
+	WaitForReusablePath(comicID, sort int, waitFor time.Duration) string
+	MarkPermanentReady(comicID, sort int, localPath string)
+}
+
 // Engine 下载引擎
 type Engine struct {
 	repo       *repository.Repository
@@ -24,13 +35,15 @@ type Engine struct {
 	cfg        *config.DownloadConfig
 	antiBanCfg *config.CrawlerConfig
 
-	downloadDir string
-	sfGroup     singleflight.Group
-	workerWg    sync.WaitGroup
-	stopCh      chan struct{}
-	taskCh      chan *model.DownloadTask
-	mu          sync.Mutex
-	running     bool
+	downloadDir  string
+	sfGroup      singleflight.Group
+	workerWg     sync.WaitGroup
+	stopCh       chan struct{}
+	taskCh       chan *model.DownloadTask
+	mu           sync.Mutex
+	running      bool
+	broadcaster  EventBroadcaster
+	tempProvider TempImageProvider
 }
 
 // NewEngine 创建下载引擎
@@ -49,6 +62,15 @@ func NewEngine(repo *repository.Repository, crawler *crawler.Client, dlCfg *conf
 		stopCh:      make(chan struct{}),
 		taskCh:      make(chan *model.DownloadTask, 100),
 	}
+}
+
+// SetBroadcaster 设置 SSE 事件广播器
+func (e *Engine) SetBroadcaster(b EventBroadcaster) {
+	e.broadcaster = b
+}
+
+func (e *Engine) SetTempImageProvider(provider TempImageProvider) {
+	e.tempProvider = provider
 }
 
 // Start 启动下载引擎
@@ -208,12 +230,19 @@ func (e *Engine) processTask(workerID int, task *model.DownloadTask) {
 		// 文件已存在则跳过
 		if _, err := os.Stat(destPath); err == nil {
 			current = i + 1
+			if e.tempProvider != nil {
+				e.tempProvider.MarkPermanentReady(task.ComicID, img.Sort, destPath)
+			}
 			e.updateProgress(task.ID, current, total)
 			continue
 		}
 
-		// 通过 singleflight 下载
-		if err := e.downloadImage(img.URL, destPath); err != nil {
+		if reusablePath := e.waitForReusableImage(task.ComicID, img.Sort); reusablePath != "" {
+			if err := copyFile(reusablePath, destPath); err != nil {
+				e.failTask(task.ID, fmt.Sprintf("复制阅读缓存失败: %v", err))
+				return
+			}
+		} else if err := e.downloadImage(img.URL, destPath); err != nil {
 			logger.Warn("下载图片失败",
 				zap.Int("comic_id", task.ComicID),
 				zap.Int("sort", img.Sort),
@@ -226,6 +255,9 @@ func (e *Engine) processTask(workerID int, task *model.DownloadTask) {
 		e.repo.GetDB().Model(&model.ComicImage{}).
 			Where("comic_id = ? AND sort = ?", task.ComicID, img.Sort).
 			Update("local_path", destPath)
+		if e.tempProvider != nil {
+			e.tempProvider.MarkPermanentReady(task.ComicID, img.Sort, destPath)
+		}
 
 		current = i + 1
 		e.updateProgress(task.ID, current, total)
@@ -260,24 +292,29 @@ func (e *Engine) processTask(workerID int, task *model.DownloadTask) {
 	})
 
 	// 更新 cache_state L3
-	e.repo.UpsertCacheState(&model.CacheState{
-		ComicID:    task.ComicID,
-		L3Cached:   true,
-		L3Total:    total,
-		L3Current:  total,
-		L3Progress: 100.0,
-	})
+	e.repo.UpsertCacheStateL3(task.ComicID, total, total, 100.0)
 
 	logger.Info("下载任务完成",
 		zap.Int("task_id", task.ID),
 		zap.Int("comic_id", task.ComicID),
 		zap.Int("total", total))
+
+	e.broadcastEvent("download:completed", map[string]interface{}{
+		"task_id":  task.ID,
+		"comic_id": task.ComicID,
+		"total":    total,
+	})
 }
 
 // updateProgress 更新下载进度
 func (e *Engine) updateProgress(taskID, current, total int) {
 	e.repo.UpdateDownloadTaskStatus(taskID, "downloading", map[string]interface{}{
 		"current": current,
+	})
+	e.broadcastEvent("download:progress", map[string]interface{}{
+		"task_id": taskID,
+		"current": current,
+		"total":   total,
 	})
 }
 
@@ -287,6 +324,17 @@ func (e *Engine) failTask(taskID int, errMsg string) {
 		"last_error": errMsg,
 		"lock_token": "",
 	})
+	e.broadcastEvent("download:failed", map[string]interface{}{
+		"task_id": taskID,
+		"error":   errMsg,
+	})
+}
+
+// broadcastEvent 广播 SSE 事件
+func (e *Engine) broadcastEvent(eventType string, data map[string]interface{}) {
+	if e.broadcaster != nil {
+		e.broadcaster.BroadcastEvent(eventType, data)
+	}
 }
 
 // downloadImage 通过 singleflight 下载图片
@@ -318,4 +366,42 @@ func (e *Engine) antiBanDelay() {
 
 	delay := minDelay + rand.Float64()*(maxDelay-minDelay)
 	time.Sleep(time.Duration(delay * float64(time.Second)))
+}
+
+func (e *Engine) waitForReusableImage(comicID, sort int) string {
+	if e.tempProvider == nil {
+		return ""
+	}
+	return e.tempProvider.WaitForReusablePath(comicID, sort, 2*time.Second)
+}
+
+func copyFile(srcPath, destPath string) error {
+	if srcPath == "" {
+		return fmt.Errorf("源文件路径为空")
+	}
+	if srcPath == destPath {
+		return nil
+	}
+
+	srcFile, err := os.Open(srcPath)
+	if err != nil {
+		return err
+	}
+	defer srcFile.Close()
+
+	if err := os.MkdirAll(filepath.Dir(destPath), 0755); err != nil {
+		return err
+	}
+
+	destFile, err := os.Create(destPath)
+	if err != nil {
+		return err
+	}
+	defer destFile.Close()
+
+	if _, err := io.Copy(destFile, srcFile); err != nil {
+		return err
+	}
+
+	return destFile.Sync()
 }

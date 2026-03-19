@@ -77,3 +77,8 @@ func (s *Service) ClientCount() int {
 	defer s.mu.RUnlock()
 	return len(s.clients)
 }
+
+// BroadcastEvent 广播带类型的事件（满足 download.EventBroadcaster 接口）
+func (s *Service) BroadcastEvent(eventType string, data interface{}) {
+	s.Broadcast(Event{Type: eventType, Data: data})
+}

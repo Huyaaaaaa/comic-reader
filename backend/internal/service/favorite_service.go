@@ -42,11 +42,8 @@ func (s *FavoriteService) ToggleFavorite(comicID int, title, coverURL string) (b
 				logger.Warn("同步 reading_progress 失败", zap.Error(err))
 			}
 
-			cs := &model.CacheState{
-				ComicID:   comicID,
-				UpdatedAt: time.Now(),
-			}
-			if err := s.repo.UpsertCacheState(cs); err != nil {
+			// 确保 cache_state 记录存在（不覆盖已有层级状态）
+			if err := s.repo.UpsertCacheStateL1(comicID); err != nil {
 				logger.Warn("同步 cache_state 失败", zap.Error(err))
 			}
 		}()

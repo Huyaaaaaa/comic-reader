@@ -8,6 +8,7 @@ import (
 	"comic-viewer-claude/internal/event"
 	"comic-viewer-claude/internal/middleware"
 	"comic-viewer-claude/internal/repository"
+	"comic-viewer-claude/internal/scheduler"
 	"comic-viewer-claude/internal/service"
 	"comic-viewer-claude/internal/source"
 	"comic-viewer-claude/pkg/config"
@@ -15,6 +16,7 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"syscall"
 
 	"github.com/gin-gonic/gin"
@@ -52,8 +54,14 @@ func main() {
 	defer repo.Close()
 	logger.Info("数据库初始化成功", zap.String("path", cfg.Database.Path))
 
+	// 初始化源站管理器
+	sourceManager := source.NewManager(repo)
+	if err := sourceManager.Load(); err != nil {
+		logger.Warn("加载源站列表失败", zap.Error(err))
+	}
+
 	// 初始化爬虫客户端
-	crawlerClient := crawler.NewClient(&cfg.Crawler)
+	crawlerClient := crawler.NewClient(&cfg.Crawler, sourceManager)
 	logger.Info("爬虫客户端初始化成功")
 
 	// 初始化封面缓存管理器
@@ -81,17 +89,34 @@ func main() {
 	searchService := service.NewSearchService(repo, comicService)
 	settingsService := service.NewSettingsService(repo)
 	downloadService := service.NewDownloadService(repo, dlEngine, &cfg.Download)
+	readerSessionService := service.NewReaderSessionService(
+		repo,
+		crawlerClient,
+		cfg.Download.Dir,
+		filepath.Join(filepath.Dir(cfg.Database.Path), "reader-cache"),
+	)
+	dlEngine.SetTempImageProvider(readerSessionService)
 	ieService := service.NewImportExportService(repo, &cfg.Download)
 	updateService := service.NewUpdateService(repo, comicService)
+	tagInitService := service.NewTagInitService(repo, comicService)
 
-	// 初始化源站管理器
-	sourceManager := source.NewManager(repo)
-	if err := sourceManager.Load(); err != nil {
-		logger.Warn("加载源站列表失败", zap.Error(err))
-	}
+	// 初始化标签（首次启动时从源站抓取）
+	go func() {
+		if err := tagInitService.InitializeTags(); err != nil {
+			logger.Warn("标签初始化失败", zap.Error(err))
+		}
+	}()
 
 	// 初始化 SSE 事件服务
 	eventService := event.NewService()
+
+	// 注入 SSE 广播到下载引擎
+	dlEngine.SetBroadcaster(eventService)
+
+	// 初始化缓存策略调度器
+	strategyScheduler := scheduler.NewStrategyScheduler(repo, comicService, comicService, downloadService, eventService)
+	strategyScheduler.Start()
+	defer strategyScheduler.Stop()
 
 	// 启动定时更新网站总数任务
 	stopStats := make(chan struct{})
@@ -104,13 +129,17 @@ func main() {
 	// 初始化处理器
 	comicHandler := api.NewComicHandler(comicService)
 	v2Handler := api.NewV2Handler(searchService, settingsService, comicService, repo)
+	v2Handler.SetStrategyReloader(strategyScheduler)
+	v2Handler.AddSettingsInvalidator(sourceManager)
 	downloadHandler := api.NewDownloadHandler(downloadService)
 	ieHandler := api.NewImportExportHandler(ieService)
 	updateHandler := api.NewUpdateHandler(updateService)
 	sourceHandler := api.NewSourceHandler(sourceManager)
 	eventHandler := api.NewEventHandler(eventService)
 	imageHandler := api.NewImageHandler(repo, crawlerClient)
+	readerHandler := api.NewReaderHandler(readerSessionService)
 	metaHandler := api.NewMetaHandler(repo)
+	storageHandler := api.NewStorageHandler(repo, &cfg.Download)
 
 	// 设置 Gin 模式
 	if cfg.Server.Mode == "release" {
@@ -123,7 +152,7 @@ func main() {
 	engine.Use(middleware.Logger())
 	engine.Use(middleware.CORS(cfg.Server.CorsOrigins))
 	// 设置路由
-	router := api.NewRouter(comicHandler, v2Handler, downloadHandler, ieHandler, updateHandler, sourceHandler, eventHandler, imageHandler, metaHandler)
+	router := api.NewRouter(comicHandler, v2Handler, downloadHandler, ieHandler, updateHandler, sourceHandler, eventHandler, imageHandler, readerHandler, metaHandler, storageHandler)
 	router.Setup(engine)
 
 	// 启动服务器

@@ -73,6 +73,38 @@ export interface ComicImage {
   local_path: string;
 }
 
+export interface ComicCacheState {
+  comic_id: number;
+  l1_cached: boolean;
+  l2_cached: boolean;
+  l3_cached: boolean;
+  l3_progress: number;
+  l3_total: number;
+  l3_current: number;
+  updated_at: string;
+}
+
+export interface ReaderSessionImage {
+  sort: number;
+  filename: string;
+  extension: string;
+  status: string;
+  ready: boolean;
+  source: string;
+  view_url: string;
+  error?: string;
+}
+
+export interface ReaderSessionSnapshot {
+  session_id: string;
+  comic_id: number;
+  ready_count: number;
+  total: number;
+  created_at: string;
+  updated_at: string;
+  images: ReaderSessionImage[];
+}
+
 export interface DashboardStats {
   total_comics: number;
   cached_comics: number;

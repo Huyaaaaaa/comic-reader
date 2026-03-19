@@ -11,6 +11,9 @@ interface CacheLevelSettings {
   count: number;
 }
 
+type ProxyMode = 'off' | 'fallback' | 'always';
+type ProxyType = 'http' | 'socks5';
+
 export function SettingsPage() {
   const { theme, toggleTheme } = useTheme();
 
@@ -30,12 +33,28 @@ export function SettingsPage() {
   // === 阅读模式 ===
   const [readingMode, setReadingMode] = useState<ViewMode>('waterfall');
 
+  // === 网络代理 ===
+  const [proxyMode, setProxyMode] = useState<ProxyMode>('off');
+  const [proxyType, setProxyType] = useState<ProxyType>('http');
+  const [proxyHost, setProxyHost] = useState('');
+  const [proxyPort, setProxyPort] = useState('');
+  const [proxyUsername, setProxyUsername] = useState('');
+  const [proxyPassword, setProxyPassword] = useState('');
+  const [proxyTimeoutMs, setProxyTimeoutMs] = useState('6000');
+  const [proxyHealth, setProxyHealth] = useState<api.ProxyHealthResponse | null>(null);
+  const [checkingProxyHealth, setCheckingProxyHealth] = useState(false);
+
   // === 多源站 ===
   const [sources, setSources] = useState<api.SourceSite[]>([]);
   const [newSourceUrl, setNewSourceUrl] = useState('');
   const [newSourceName, setNewSourceName] = useState('');
+  const [releasePageUrl, setReleasePageUrl] = useState('');
+  const [releaseImporting, setReleaseImporting] = useState(false);
+  const [releaseImportResult, setReleaseImportResult] = useState<api.ImportReleasePageSourcesResult | null>(null);
+  const [releaseImportError, setReleaseImportError] = useState<string | null>(null);
   const [sourcesExpanded, setSourcesExpanded] = useState(false);
   const [sourcesLoading, setSourcesLoading] = useState(false);
+  const [testingSourceId, setTestingSourceId] = useState<number | null>(null);
 
   // 加载源站列表
   useEffect(() => {
@@ -80,6 +99,13 @@ export function SettingsPage() {
       if (settings.cache_l2_strategy) setExtendedCache({ strategy: settings.cache_l2_strategy as CacheStrategy, count: parseInt(settings.cache_l2_count) || 500 });
       if (settings.cache_l3_strategy) setContentCache({ strategy: settings.cache_l3_strategy as CacheStrategy, count: parseInt(settings.cache_l3_count) || 100 });
       if (settings.reading_mode) setReadingMode(settings.reading_mode as ViewMode);
+      if (settings.network_proxy_mode) setProxyMode(settings.network_proxy_mode as ProxyMode);
+      if (settings.network_proxy_type) setProxyType(settings.network_proxy_type as ProxyType);
+      if (settings.network_proxy_host) setProxyHost(settings.network_proxy_host);
+      if (settings.network_proxy_port) setProxyPort(settings.network_proxy_port);
+      if (settings.network_proxy_username) setProxyUsername(settings.network_proxy_username);
+      if (settings.network_proxy_password) setProxyPassword(settings.network_proxy_password);
+      if (settings.network_proxy_timeout_ms) setProxyTimeoutMs(settings.network_proxy_timeout_ms);
       if (settings.content_update_mode) setContentUpdateMode(settings.content_update_mode as 'manual' | 'startup' | 'interval');
       if (settings.update_interval) setUpdateInterval(parseInt(settings.update_interval) || 30);
       if (settings.app_auto_check !== undefined) setAppAutoCheck(settings.app_auto_check === 'true');
@@ -88,6 +114,66 @@ export function SettingsPage() {
       setSettingsLoaded(true);
     });
   }, []);
+
+  const refreshProxyHealth = useCallback(async (force = false) => {
+    const configured = proxyHost.trim() !== '' && proxyPort.trim() !== '';
+    if (!configured) {
+      setProxyHealth({
+        configured: false,
+        available: false,
+        status: 'unconfigured',
+        message: '代理未配置完整',
+        latency_ms: 0,
+        targets: [],
+      });
+      return;
+    }
+
+    setCheckingProxyHealth(true);
+    try {
+      const result = await api.checkProxyHealth(force);
+      setProxyHealth(result);
+    } catch (error) {
+      console.error('检测代理失败:', error);
+      setProxyHealth({
+        configured: true,
+        available: false,
+        status: 'unavailable',
+        message: error instanceof Error ? error.message : '代理检测失败',
+        latency_ms: 0,
+        targets: [],
+      });
+    } finally {
+      setCheckingProxyHealth(false);
+    }
+  }, [proxyHost, proxyPort]);
+
+  useEffect(() => {
+    if (!settingsLoaded) {
+      return;
+    }
+    refreshProxyHealth(false).catch(() => {});
+  }, [settingsLoaded, refreshProxyHealth]);
+
+  const buildSettingsPayload = useCallback(() => ({
+    cache_l1_strategy: metadataCache.strategy,
+    cache_l1_count: String(metadataCache.count),
+    cache_l2_strategy: extendedCache.strategy,
+    cache_l2_count: String(extendedCache.count),
+    cache_l3_strategy: contentCache.strategy,
+    cache_l3_count: String(contentCache.count),
+    reading_mode: readingMode,
+    network_proxy_mode: proxyMode,
+    network_proxy_type: proxyType,
+    network_proxy_host: proxyHost.trim(),
+    network_proxy_port: proxyPort.trim(),
+    network_proxy_username: proxyUsername.trim(),
+    network_proxy_password: proxyPassword,
+    network_proxy_timeout_ms: proxyTimeoutMs.trim() || '6000',
+    content_update_mode: contentUpdateMode,
+    update_interval: String(updateInterval),
+    app_auto_check: String(appAutoCheck),
+  }), [metadataCache, extendedCache, contentCache, readingMode, proxyMode, proxyType, proxyHost, proxyPort, proxyUsername, proxyPassword, proxyTimeoutMs, contentUpdateMode, updateInterval, appAutoCheck]);
 
   // === 自动保存设置（防抖 800ms）===
   const saveSettings = useCallback(() => {
@@ -99,19 +185,9 @@ export function SettingsPage() {
       setSaving(true);
       setSaveStatus('saving');
       try {
-        await api.updateUserSettings({
-          cache_l1_strategy: metadataCache.strategy,
-          cache_l1_count: String(metadataCache.count),
-          cache_l2_strategy: extendedCache.strategy,
-          cache_l2_count: String(extendedCache.count),
-          cache_l3_strategy: contentCache.strategy,
-          cache_l3_count: String(contentCache.count),
-          reading_mode: readingMode,
-          content_update_mode: contentUpdateMode,
-          update_interval: String(updateInterval),
-          app_auto_check: String(appAutoCheck),
-        });
+        await api.updateUserSettings(buildSettingsPayload());
         setSaveStatus('saved');
+        refreshProxyHealth(true).catch(() => {});
         saveStatusTimerRef.current = setTimeout(() => setSaveStatus('idle'), 2000);
       } catch (e) {
         console.error('保存设置失败:', e);
@@ -121,7 +197,28 @@ export function SettingsPage() {
         setSaving(false);
       }
     }, 800);
-  }, [settingsLoaded, metadataCache, extendedCache, contentCache, readingMode, contentUpdateMode, updateInterval, appAutoCheck]);
+  }, [settingsLoaded, buildSettingsPayload, refreshProxyHealth]);
+
+  const flushSettingsNow = useCallback(async () => {
+    if (!settingsLoaded) return;
+    if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+    if (saveStatusTimerRef.current) clearTimeout(saveStatusTimerRef.current);
+    setSaving(true);
+    setSaveStatus('saving');
+    try {
+      await api.updateUserSettings(buildSettingsPayload());
+      setSaveStatus('saved');
+      await refreshProxyHealth(true);
+      saveStatusTimerRef.current = setTimeout(() => setSaveStatus('idle'), 2000);
+    } catch (error) {
+      console.error('立即保存设置失败:', error);
+      setSaveStatus('error');
+      saveStatusTimerRef.current = setTimeout(() => setSaveStatus('idle'), 4000);
+      throw error;
+    } finally {
+      setSaving(false);
+    }
+  }, [settingsLoaded, buildSettingsPayload, refreshProxyHealth]);
 
   useEffect(() => {
     if (!settingsLoaded) {
@@ -138,7 +235,7 @@ export function SettingsPage() {
       if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
       if (saveStatusTimerRef.current) clearTimeout(saveStatusTimerRef.current);
     };
-  }, [settingsLoaded, metadataCache, extendedCache, contentCache, readingMode, contentUpdateMode, updateInterval, appAutoCheck, saveSettings]);
+  }, [settingsLoaded, metadataCache, extendedCache, contentCache, readingMode, proxyMode, proxyType, proxyHost, proxyPort, proxyUsername, proxyPassword, proxyTimeoutMs, contentUpdateMode, updateInterval, appAutoCheck, saveSettings]);
 
   // === 导出处理 ===
   const handleExport = async (scope: string) => {
@@ -256,6 +353,27 @@ export function SettingsPage() {
     }
   };
 
+  const importFromReleasePage = async () => {
+    if (!releasePageUrl.trim()) return;
+
+    setReleaseImporting(true);
+    setReleaseImportError(null);
+    setReleaseImportResult(null);
+    try {
+      const result = await api.importSourcesFromReleasePage(releasePageUrl.trim());
+      setReleaseImportResult(result);
+      setReleasePageUrl('');
+      const data = await api.fetchSources();
+      setSources(data);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : '导入失败';
+      setReleaseImportError(message);
+      setReleaseImportResult(null);
+    } finally {
+      setReleaseImporting(false);
+    }
+  };
+
   const removeSource = async (id: number) => {
     try {
       await api.deleteSource(id);
@@ -266,13 +384,31 @@ export function SettingsPage() {
   };
 
   const testSource = async (id: number) => {
+    setTestingSourceId(id);
     try {
-      await api.checkSourceHealth(id);
-      // 重新获取源站列表以更新状态
-      const data = await api.fetchSources();
-      setSources(data);
+      await flushSettingsNow();
+      const result = await api.checkSourceHealth(id);
+      setSources((prev) =>
+        prev.map((source) =>
+          source.id === id
+            ? {
+                ...source,
+                status: result.status,
+                latency: result.latency_ms,
+                direct_status: result.direct_status,
+                direct_latency: result.direct_latency_ms,
+                direct_last_error: result.direct_error || '',
+                proxy_status: result.proxy_status,
+                proxy_latency: result.proxy_latency_ms,
+                proxy_last_error: result.proxy_error || '',
+              }
+            : source
+        )
+      );
     } catch (error) {
       console.error('测试源站失败:', error);
+    } finally {
+      setTestingSourceId(null);
     }
   };
 
@@ -345,6 +481,52 @@ export function SettingsPage() {
   } as const;
 
   const currentSaveFeedback = saveStatus === 'idle' ? null : saveFeedback[saveStatus];
+  const proxyConfigured = proxyHost.trim() !== '' && proxyPort.trim() !== '';
+  const proxyUsable = proxyHealth?.available === true;
+
+  const renderAccessBadge = (
+    label: string,
+    status: string | undefined,
+    latency: number | undefined,
+    accent: 'direct' | 'proxy',
+    enabled: boolean = true,
+    error?: string
+  ) => {
+    if (!enabled) {
+      return (
+        <span title={error || undefined} className="rounded-full bg-gray-100 px-2.5 py-1 text-xs text-gray-500 dark:bg-gray-700 dark:text-gray-400">
+          {label} {accent === 'proxy' && proxyConfigured ? '不可用' : '未配置'}
+        </span>
+      );
+    }
+
+    const normalizedStatus = status || 'unknown';
+    if (normalizedStatus === 'available') {
+      const classes = accent === 'proxy'
+        ? 'bg-amber-100 text-orange-700 dark:bg-amber-900/30 dark:text-orange-300'
+        : 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400';
+      const value = latency && latency > 0 ? `${latency}ms` : '在线';
+      return (
+        <span title={error || undefined} className={`rounded-full px-2.5 py-1 text-xs ${classes}`}>
+          {label} {value}
+        </span>
+      );
+    }
+
+    if (normalizedStatus === 'unavailable') {
+      return (
+        <span title={error || undefined} className="rounded-full bg-gray-200 px-2.5 py-1 text-xs text-gray-600 dark:bg-gray-700 dark:text-gray-300">
+          {label} 暂不可用
+        </span>
+      );
+    }
+
+    return (
+      <span title={error || undefined} className="rounded-full bg-gray-100 px-2.5 py-1 text-xs text-gray-500 dark:bg-gray-700 dark:text-gray-400">
+        {label} 未检测
+      </span>
+    );
+  };
 
   return (
     <div className="p-8">
@@ -412,9 +594,156 @@ export function SettingsPage() {
           </div>
         </section>
 
+        <section className="bg-white dark:bg-gray-800 rounded-lg p-6 shadow-sm">
+          <h2 className="text-xl mb-4 text-gray-900 dark:text-white">网络代理</h2>
+          <p className="mb-6 text-sm text-gray-600 dark:text-gray-400">
+            代理会先用 Google / YouTube 连通性探针检测自身是否可用。只有代理可用时，源站测速、心跳和在线抓取才会尝试使用 Proxy。
+          </p>
+
+          <div className="space-y-4">
+            <div className="grid gap-4 md:grid-cols-2">
+              <label className="space-y-2">
+                <span className="text-sm text-gray-700 dark:text-gray-300">代理模式</span>
+                <select
+                  value={proxyMode}
+                  onChange={(e) => setProxyMode(e.target.value as ProxyMode)}
+                  className="w-full rounded-lg border border-gray-300 bg-white px-4 py-2 text-gray-900 dark:border-gray-600 dark:bg-gray-700 dark:text-white"
+                >
+                  <option value="off">不使用代理</option>
+                  <option value="fallback">直连源站全部不可用后使用 Proxy</option>
+                  <option value="always">全局通过 Proxy 访问</option>
+                </select>
+              </label>
+
+              <label className="space-y-2">
+                <span className="text-sm text-gray-700 dark:text-gray-300">代理类型</span>
+                <select
+                  value={proxyType}
+                  onChange={(e) => setProxyType(e.target.value as ProxyType)}
+                  className="w-full rounded-lg border border-gray-300 bg-white px-4 py-2 text-gray-900 dark:border-gray-600 dark:bg-gray-700 dark:text-white"
+                >
+                  <option value="http">HTTP / Clash Mixed Port</option>
+                  <option value="socks5">SOCKS5</option>
+                </select>
+              </label>
+            </div>
+
+            <div className="grid gap-4 md:grid-cols-[minmax(0,1fr),180px]">
+              <label className="space-y-2">
+                <span className="text-sm text-gray-700 dark:text-gray-300">代理主机</span>
+                <input
+                  type="text"
+                  value={proxyHost}
+                  onChange={(e) => setProxyHost(e.target.value)}
+                  placeholder="例如 127.0.0.1"
+                  className="w-full rounded-lg border border-gray-300 bg-white px-4 py-2 text-gray-900 placeholder-gray-400 dark:border-gray-600 dark:bg-gray-700 dark:text-white"
+                />
+              </label>
+
+              <label className="space-y-2">
+                <span className="text-sm text-gray-700 dark:text-gray-300">端口</span>
+                <input
+                  type="number"
+                  min="1"
+                  value={proxyPort}
+                  onChange={(e) => setProxyPort(e.target.value)}
+                  placeholder="7890"
+                  className="w-full rounded-lg border border-gray-300 bg-white px-4 py-2 text-gray-900 placeholder-gray-400 dark:border-gray-600 dark:bg-gray-700 dark:text-white"
+                />
+              </label>
+            </div>
+
+            <div className="grid gap-4 md:grid-cols-2">
+              <label className="space-y-2">
+                <span className="text-sm text-gray-700 dark:text-gray-300">用户名（可选）</span>
+                <input
+                  type="text"
+                  value={proxyUsername}
+                  onChange={(e) => setProxyUsername(e.target.value)}
+                  className="w-full rounded-lg border border-gray-300 bg-white px-4 py-2 text-gray-900 dark:border-gray-600 dark:bg-gray-700 dark:text-white"
+                />
+              </label>
+
+              <label className="space-y-2">
+                <span className="text-sm text-gray-700 dark:text-gray-300">密码（可选）</span>
+                <input
+                  type="password"
+                  value={proxyPassword}
+                  onChange={(e) => setProxyPassword(e.target.value)}
+                  className="w-full rounded-lg border border-gray-300 bg-white px-4 py-2 text-gray-900 dark:border-gray-600 dark:bg-gray-700 dark:text-white"
+                />
+              </label>
+            </div>
+
+            <div className="grid gap-4 md:grid-cols-[220px,minmax(0,1fr)]">
+              <label className="space-y-2">
+                <span className="text-sm text-gray-700 dark:text-gray-300">请求超时（毫秒）</span>
+                <input
+                  type="number"
+                  min="1000"
+                  step="500"
+                  value={proxyTimeoutMs}
+                  onChange={(e) => setProxyTimeoutMs(e.target.value)}
+                  className="w-full rounded-lg border border-gray-300 bg-white px-4 py-2 text-gray-900 dark:border-gray-600 dark:bg-gray-700 dark:text-white"
+                />
+              </label>
+
+              <div className="rounded-lg border border-blue-200 bg-blue-50/70 px-4 py-3 text-sm text-blue-900 dark:border-blue-900/60 dark:bg-blue-950/20 dark:text-blue-100">
+                建议：Clash 混合端口直接选 HTTP。`fallback` 模式会先尝试所有直连可用源站，全部失败后才切到 Proxy 可用源站。
+              </div>
+            </div>
+
+            <div className={`rounded-lg border px-4 py-4 ${
+              !proxyConfigured
+                ? 'border-gray-200 bg-gray-50 dark:border-gray-700 dark:bg-gray-900/40'
+                : proxyUsable
+                ? 'border-green-200 bg-green-50 dark:border-green-900/50 dark:bg-green-950/20'
+                : 'border-amber-200 bg-amber-50 dark:border-amber-900/50 dark:bg-amber-950/20'
+            }`}>
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <p className="text-sm font-medium text-gray-900 dark:text-white">代理连通状态</p>
+                  <p className="text-sm text-gray-600 dark:text-gray-400">
+                    {proxyHealth?.message || (proxyConfigured ? '等待检测代理可用性' : '填写代理地址后可检测')}
+                  </p>
+                  {proxyHealth?.checked_at && (
+                    <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">最近检测：{proxyHealth.checked_at}</p>
+                  )}
+                </div>
+                <button
+                  onClick={() => refreshProxyHealth(true)}
+                  disabled={checkingProxyHealth || !proxyConfigured}
+                  className="flex items-center gap-2 rounded-lg bg-blue-500 px-4 py-2 text-white transition-colors hover:bg-blue-600 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {checkingProxyHealth ? <Loader2 size={16} className="animate-spin" /> : <RefreshCw size={16} />}
+                  <span>{checkingProxyHealth ? '检测中' : '检测代理'}</span>
+                </button>
+              </div>
+
+              {proxyHealth?.targets && proxyHealth.targets.length > 0 && (
+                <div className="mt-3 flex flex-wrap gap-2">
+                  {proxyHealth.targets.map((target) => (
+                    <span
+                      key={target.name}
+                      title={target.error || target.url}
+                      className={`rounded-full px-2.5 py-1 text-xs ${
+                        target.status === 'available'
+                          ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300'
+                          : 'bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-300'
+                      }`}
+                    >
+                      {target.name} {target.status === 'available' ? `${target.latency_ms}ms` : '失败'}
+                    </span>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        </section>
+
         {/* 多源站管理 */}
         <SectionToggle title="多源站管理" expanded={sourcesExpanded} onToggle={() => setSourcesExpanded(!sourcesExpanded)}>
-          <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">管理漫画数据源站地址，支持故障自动切换</p>
+          <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">管理漫画数据源站地址。在线抓取会按优先级选择直连可用源站；当代理模式为 fallback 时，直连源站全部不可用后才会转为使用 Proxy 可用源站。</p>
 
           {sourcesLoading ? (
             <div className="flex items-center justify-center py-8">
@@ -422,6 +751,74 @@ export function SettingsPage() {
             </div>
           ) : (
             <>
+              <div className="mb-6 rounded-lg border border-blue-200 bg-blue-50/70 p-4 dark:border-blue-900/60 dark:bg-blue-950/20">
+                <h3 className="mb-2 font-medium text-gray-900 dark:text-white">从发布页自动导入</h3>
+                <p className="mb-3 text-sm text-gray-600 dark:text-gray-400">
+                  这里的发布页网址只用于本次导入，不会保存到设置中。系统会自动提取候选网址，做可达性和漫画内容指纹校验，再把通过校验且未录入的源站加入列表。
+                </p>
+                <div className="flex gap-2">
+                  <input
+                    type="url"
+                    value={releasePageUrl}
+                    onChange={(e) => {
+                      setReleasePageUrl(e.target.value);
+                      setReleaseImportError(null);
+                      setReleaseImportResult(null);
+                    }}
+                    placeholder="输入地址发布页，例如 https://2026-01-31-akalist.top/"
+                    className="flex-1 px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400"
+                    onKeyDown={(e) => { if (e.key === 'Enter') importFromReleasePage(); }}
+                  />
+                  <button
+                    onClick={importFromReleasePage}
+                    disabled={releaseImporting || !releasePageUrl.trim()}
+                    className="flex items-center gap-2 px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors disabled:opacity-50"
+                  >
+                    {releaseImporting ? <Loader2 size={16} className="animate-spin" /> : <RefreshCw size={16} />}
+                    <span>{releaseImporting ? '导入中' : '导入可用源站'}</span>
+                  </button>
+                </div>
+
+                {releaseImportError && (
+                  <p className="mt-3 text-sm text-red-600 dark:text-red-400">{releaseImportError}</p>
+                )}
+
+                {releaseImportResult && (
+                  <div className="mt-4 rounded-lg border border-gray-200 bg-white/80 p-3 text-sm dark:border-gray-700 dark:bg-gray-900/60">
+                    <p className="text-gray-900 dark:text-white">
+                      本次从发布页提取了 <span className="font-medium text-blue-600 dark:text-blue-400">{releaseImportResult.candidate_count}</span> 个候选网址，
+                      新增 <span className="font-medium text-green-600 dark:text-green-400">{releaseImportResult.added_count}</span> 个，
+                      跳过 <span className="font-medium text-amber-600 dark:text-amber-400">{releaseImportResult.skipped_count}</span> 个。
+                    </p>
+                    {releaseImportResult.added.length > 0 && (
+                      <div className="mt-3">
+                        <p className="mb-1 text-gray-700 dark:text-gray-300">已新增：</p>
+                        <div className="space-y-1">
+                          {releaseImportResult.added.map((source) => (
+                            <div key={source.id} className="truncate text-green-700 dark:text-green-400">
+                              {source.url}
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                    {releaseImportResult.skipped.length > 0 && (
+                      <div className="mt-3">
+                        <p className="mb-1 text-gray-700 dark:text-gray-300">已跳过：</p>
+                        <div className="max-h-40 space-y-1 overflow-auto">
+                          {releaseImportResult.skipped.map((item) => (
+                            <div key={`${item.url}-${item.reason}`} className="text-gray-600 dark:text-gray-400">
+                              <span className="break-all">{item.url}</span>
+                              <span className="ml-2 text-xs">({item.reason})</span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+
               <div className="space-y-2 mb-4">
                 <input type="text" value={newSourceName} onChange={(e) => setNewSourceName(e.target.value)}
                   placeholder="源站名称（可选）"
@@ -442,18 +839,28 @@ export function SettingsPage() {
               ) : (
                 <div className="space-y-2">
                   {sources.map((source, index) => (
-                    <div key={source.id} className="flex items-center gap-3 p-3 bg-gray-50 dark:bg-gray-750 rounded-lg">
+                    <div key={source.id} className="flex flex-wrap items-center gap-3 rounded-lg bg-gray-50 p-3 dark:bg-gray-750">
                       <span className="text-sm text-gray-500 w-6">{index + 1}</span>
                       <Globe size={16} className="text-gray-400 flex-shrink-0" />
                       <div className="flex-1 min-w-0">
                         <div className="text-sm text-gray-900 dark:text-white truncate">{source.name}</div>
                         <div className="text-xs text-gray-500 dark:text-gray-400 truncate">{source.url}</div>
                       </div>
-                      <span className={`text-xs px-2 py-1 rounded ${source.status === 'active' ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400' : 'bg-gray-100 text-gray-500 dark:bg-gray-700 dark:text-gray-400'}`}>
-                        {source.status === 'active' ? (source.latency > 0 ? `${source.latency}ms` : '在线') : '未知'}
-                      </span>
-                      <button onClick={() => testSource(source.id)} className="p-1 hover:bg-gray-200 dark:hover:bg-gray-600 rounded transition-colors" title="测速">
-                        <TestTube size={16} className="text-blue-500" />
+                      <div className="flex flex-wrap items-center gap-2">
+                        {renderAccessBadge('直连', source.direct_status, source.direct_latency, 'direct', true, source.direct_last_error)}
+                        {renderAccessBadge('Proxy', source.proxy_status, source.proxy_latency, 'proxy', proxyConfigured && proxyUsable, proxyUsable ? source.proxy_last_error : '代理当前不可用，已跳过代理检测')}
+                      </div>
+                      <button
+                        onClick={() => testSource(source.id)}
+                        disabled={testingSourceId === source.id}
+                        className="p-1 hover:bg-gray-200 dark:hover:bg-gray-600 rounded transition-colors disabled:cursor-wait disabled:opacity-70"
+                        title="测速"
+                      >
+                        {testingSourceId === source.id ? (
+                          <Loader2 size={16} className="animate-spin text-blue-500" />
+                        ) : (
+                          <TestTube size={16} className="text-blue-500" />
+                        )}
                       </button>
                       <button onClick={() => removeSource(source.id)} className="p-1 hover:bg-gray-200 dark:hover:bg-gray-600 rounded transition-colors" title="删除">
                         <Trash2 size={16} className="text-red-500" />
@@ -465,7 +872,7 @@ export function SettingsPage() {
 
               <div className="mt-4 p-3 bg-gray-50 dark:bg-gray-750 rounded-lg">
                 <p className="text-xs text-gray-500 dark:text-gray-400">
-                  心跳检测间隔：60 分钟 | 单次请求自动重试 3 次 | 连续 3 次失败自动切换
+                  心跳检测间隔：60 分钟 | 手动测速与心跳都会刷新直连 / Proxy 两列状态 | 新增源站后可先手动测速确认可达性
                 </p>
               </div>
             </>

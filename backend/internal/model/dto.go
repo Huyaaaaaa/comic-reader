@@ -6,7 +6,7 @@ type ComicListItem struct {
 	Title       string  `json:"title"`
 	CoverURL    string  `json:"cover_url"`
 	CoverBase64 string  `json:"cover_base64,omitempty"`
-	Rating    float64 `json:"rating"`
+	Rating      float64 `json:"rating"`
 	RatingCount int     `json:"rating_count"`
 	Favorites   int     `json:"favorites"`
 	Author      string  `json:"author"`
@@ -18,23 +18,23 @@ type ComicListItem struct {
 
 // ComicDetail 详情页漫画信息
 type ComicDetail struct {
-	ID           int              `json:"id"`
-	Title        string           `json:"title"`
-	Subtitle     string           `json:"subtitle"`
-	Author       string           `json:"author"`
+	ID           int          `json:"id"`
+	Title        string       `json:"title"`
+	Subtitle     string       `json:"subtitle"`
+	Author       string       `json:"author"`
 	AuthorID     int          `json:"author_id"`
-	Authors      []AuthorInfo     `json:"authors"`
-	CoverURL     string           `json:"cover_url"`
-	Rating       float64          `json:"rating"`
-	RatingCount  int         `json:"rating_count"`
-	Favorites    int              `json:"favorites"`
-	CategoryID   int              `json:"category_id"`
-	CategoryName string           `json:"category_name"`
-	Tags         []TagInfo        `json:"tags"`
-	CreatedAt    string           `json:"created_at"`
-	UpdatedAt    string           `json:"updated_at"`
-	ReaderURL    string           `json:"reader_url"`
-	IsFavorited  bool           `json:"is_favorited"`
+	Authors      []AuthorInfo `json:"authors"`
+	CoverURL     string       `json:"cover_url"`
+	Rating       float64      `json:"rating"`
+	RatingCount  int          `json:"rating_count"`
+	Favorites    int          `json:"favorites"`
+	CategoryID   int          `json:"category_id"`
+	CategoryName string       `json:"category_name"`
+	Tags         []TagInfo    `json:"tags"`
+	CreatedAt    string       `json:"created_at"`
+	UpdatedAt    string       `json:"updated_at"`
+	ReaderURL    string       `json:"reader_url"`
+	IsFavorited  bool         `json:"is_favorited"`
 }
 
 // AuthorInfo 作者信息
@@ -71,9 +71,9 @@ type ListResponse struct {
 
 // SearchRequest 搜索请求
 type SearchRequest struct {
-	Keyword  string `json:"keyword" form:"keyword"`
-	Page     int    `json:"page" form:"page"`
-	Mode     string `json:"mode" form:"mode"` // online / local
+	Keyword string `json:"keyword" form:"keyword"`
+	Page    int    `json:"page" form:"page"`
+	Mode    string `json:"mode" form:"mode"` // online / local
 }
 
 // FilterRequest 筛选请求
@@ -82,7 +82,7 @@ type FilterRequest struct {
 	CategoryID *int   `json:"category_id" form:"category_id"`
 	AuthorID   *int   `json:"author_id" form:"author_id"`
 	Author     string `json:"author" form:"author"`
-	Page    int    `json:"page" form:"page"`
+	Page       int    `json:"page" form:"page"`
 }
 
 // SettingUpdateRequest 设置更新请求
@@ -165,7 +165,7 @@ type ImportExecuteRequest struct {
 
 // ImportScanResponse 导入预扫描响应
 type ImportScanResponse struct {
-	Conflicts ImportConflicts       `json:"conflicts"`
+	Conflicts ImportConflicts        `json:"conflicts"`
 	Details   []ImportConflictDetail `json:"details"`
 }
 
@@ -187,7 +187,7 @@ type ImportConflictDetail struct {
 
 // ExportManifest 导出清单
 type ExportManifest struct {
-	Version    string              `json:"version"`
+	Version    string             `json:"version"`
 	ExportedAt string             `json:"exported_at"`
 	Comics     []ExportComicEntry `json:"comics"`
 	TotalSize  int64              `json:"total_size"`
@@ -208,17 +208,17 @@ type ExportFileEntry struct {
 
 // ContentUpdateRequest 内容更新请求
 type ContentUpdateRequest struct {
-	Pages int    `json:"pages"`      // 扫描前 N 页，默认 2
-	Mode  string `json:"mode"`       // manual/auto
+	Pages int    `json:"pages"` // 扫描前 N 页，默认 2
+	Mode  string `json:"mode"`  // manual/auto
 }
 
 // ContentUpdateResponse 内容更新响应
 type ContentUpdateResponse struct {
-	HasUpdate   bool            `json:"has_update"`
-	NewComics   int             `json:"new_comics"`
-	ScannedPages int            `json:"scanned_pages"`
-	Details     []NewComicBrief `json:"details,omitempty"`
-	RecordID    int             `json:"record_id"`
+	HasUpdate    bool            `json:"has_update"`
+	NewComics    int             `json:"new_comics"`
+	ScannedPages int             `json:"scanned_pages"`
+	Details      []NewComicBrief `json:"details,omitempty"`
+	RecordID     int             `json:"record_id"`
 }
 
 // NewComicBrief 新漫画摘要
@@ -246,13 +246,68 @@ type AddSourceRequest struct {
 	ImageCDN string `json:"image_cdn"`
 }
 
+// ImportReleasePageSourcesRequest 从发布页导入源站请求
+type ImportReleasePageSourcesRequest struct {
+	ReleasePageURL string `json:"release_page_url" binding:"required,url"`
+}
+
+// SourceValidationFingerprint 源站校验指纹
+type SourceValidationFingerprint struct {
+	ComicID int    `json:"comic_id"`
+	Title   string `json:"title"`
+	Author  string `json:"author"`
+}
+
+// SourceImportSkipped 导入时被跳过的源站
+type SourceImportSkipped struct {
+	URL    string `json:"url"`
+	Reason string `json:"reason"`
+}
+
+// ImportReleasePageSourcesResponse 从发布页导入源站响应
+type ImportReleasePageSourcesResponse struct {
+	ReleasePageURL string                        `json:"release_page_url"`
+	CandidateCount int                           `json:"candidate_count"`
+	AddedCount     int                           `json:"added_count"`
+	SkippedCount   int                           `json:"skipped_count"`
+	Added          []SourceSite                  `json:"added"`
+	Skipped        []SourceImportSkipped         `json:"skipped"`
+	Fingerprints   []SourceValidationFingerprint `json:"fingerprints"`
+}
+
 // SourceHealthResponse 源站健康检查响应
 type SourceHealthResponse struct {
-	ID      int    `json:"id"`
+	ID            int    `json:"id"`
+	URL           string `json:"url"`
+	Status        string `json:"status"`
+	Latency       int    `json:"latency_ms"`
+	DirectStatus  string `json:"direct_status"`
+	DirectLatency int    `json:"direct_latency_ms"`
+	DirectError   string `json:"direct_error,omitempty"`
+	ProxyStatus   string `json:"proxy_status"`
+	ProxyLatency  int    `json:"proxy_latency_ms"`
+	ProxyError    string `json:"proxy_error,omitempty"`
+	Error         string `json:"error,omitempty"`
+}
+
+// ProxyTargetProbeResponse 代理探针结果
+type ProxyTargetProbeResponse struct {
+	Name    string `json:"name"`
 	URL     string `json:"url"`
 	Status  string `json:"status"`
 	Latency int    `json:"latency_ms"`
 	Error   string `json:"error,omitempty"`
+}
+
+// ProxyHealthResponse 代理健康状态
+type ProxyHealthResponse struct {
+	Configured bool                       `json:"configured"`
+	Available  bool                       `json:"available"`
+	Status     string                     `json:"status"`
+	Message    string                     `json:"message,omitempty"`
+	Latency    int                        `json:"latency_ms"`
+	CheckedAt  string                     `json:"checked_at,omitempty"`
+	Targets    []ProxyTargetProbeResponse `json:"targets"`
 }
 
 // SSEEvent SSE 事件
@@ -262,21 +317,21 @@ type SSEEvent struct {
 }
 
 type DashboardStats struct {
-	TotalComics       int `json:"total_comics"`
-	CachedComics      int `json:"cached_comics"`
-	CoverCached       int `json:"cover_cached"`
-	TotalTags         int `json:"total_tags"`
-	FavoritesCount    int `json:"favorites_count"`
-	HistoryCount      int `json:"history_count"`
-	DownloadingCount  int `json:"downloading_count"`
-	PendingDownloads  int `json:"pending_downloads"`
+	TotalComics        int `json:"total_comics"`
+	CachedComics       int `json:"cached_comics"`
+	CoverCached        int `json:"cover_cached"`
+	TotalTags          int `json:"total_tags"`
+	FavoritesCount     int `json:"favorites_count"`
+	HistoryCount       int `json:"history_count"`
+	DownloadingCount   int `json:"downloading_count"`
+	PendingDownloads   int `json:"pending_downloads"`
 	CompletedDownloads int `json:"completed_downloads"`
-	FailedDownloads   int `json:"failed_downloads"`
-	L1CachedCount     int `json:"l1_cached_count"`
-	L2CachedCount     int `json:"l2_cached_count"`
-	L3CachedCount     int `json:"l3_cached_count"`
-	ActiveSources     int `json:"active_sources"`
-	TotalSources      int `json:"total_sources"`
-	DiskUsedMB        int `json:"disk_used_mb"`
-	DiskAvailMB       int `json:"disk_avail_mb"`
+	FailedDownloads    int `json:"failed_downloads"`
+	L1CachedCount      int `json:"l1_cached_count"`
+	L2CachedCount      int `json:"l2_cached_count"`
+	L3CachedCount      int `json:"l3_cached_count"`
+	ActiveSources      int `json:"active_sources"`
+	TotalSources       int `json:"total_sources"`
+	DiskUsedMB         int `json:"disk_used_mb"`
+	DiskAvailMB        int `json:"disk_avail_mb"`
 }

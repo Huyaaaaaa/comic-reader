@@ -32,6 +32,16 @@ func (r *Repository) GetSourceByID(id int) (*model.SourceSite, error) {
 	return &source, nil
 }
 
+// GetSourceByURL 根据 URL 获取源站
+func (r *Repository) GetSourceByURL(url string) (*model.SourceSite, error) {
+	var source model.SourceSite
+	err := r.db.Where("url = ?", url).First(&source).Error
+	if err != nil {
+		return nil, err
+	}
+	return &source, nil
+}
+
 // AddSource 添加源站
 func (r *Repository) AddSource(source *model.SourceSite) error {
 	return r.db.Create(source).Error
@@ -42,7 +52,7 @@ func (r *Repository) DeleteSource(id int) error {
 	return r.db.Delete(&model.SourceSite{}, id).Error
 }
 
-// UpdateSourceStatus 更新源站状态
+// UpdateSourceStatus 更新源站总体状态
 func (r *Repository) UpdateSourceStatus(id int, status string, latency int) error {
 	now := time.Now()
 	return r.db.Model(&model.SourceSite{}).Where("id = ?", id).Updates(map[string]interface{}{
@@ -50,6 +60,18 @@ func (r *Repository) UpdateSourceStatus(id int, status string, latency int) erro
 		"latency":    latency,
 		"last_check": &now,
 	}).Error
+}
+
+// UpdateSourceFields 批量更新源站字段
+func (r *Repository) UpdateSourceFields(id int, fields map[string]interface{}) error {
+	if fields == nil {
+		fields = make(map[string]interface{})
+	}
+	if _, ok := fields["last_check"]; !ok {
+		now := time.Now()
+		fields["last_check"] = &now
+	}
+	return r.db.Model(&model.SourceSite{}).Where("id = ?", id).Updates(fields).Error
 }
 
 // IncrementSourceFailCount 增加源站失败计数

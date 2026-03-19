@@ -157,6 +157,29 @@ func (r *Repository) GetComics(ids []int) ([]model.Comic, error) {
 	return comics, err
 }
 
+// GetSourceValidationFingerprints 获取用于源站内容校验的本地漫画特征点
+func (r *Repository) GetSourceValidationFingerprints(limit int) ([]model.SourceValidationFingerprint, error) {
+	var comics []model.Comic
+	err := r.db.
+		Where("title <> '' AND author <> ''").
+		Order("updated_at DESC, id DESC").
+		Limit(limit).
+		Find(&comics).Error
+	if err != nil {
+		return nil, err
+	}
+
+	fingerprints := make([]model.SourceValidationFingerprint, 0, len(comics))
+	for _, comic := range comics {
+		fingerprints = append(fingerprints, model.SourceValidationFingerprint{
+			ComicID: comic.ID,
+			Title:   comic.Title,
+			Author:  comic.Author,
+		})
+	}
+	return fingerprints, nil
+}
+
 // SearchComicsLocal 本地搜索漫画
 func (r *Repository) SearchComicsLocal(keyword string, limit, offset int) ([]model.Comic, int64, error) {
 	var comics []model.Comic
